@@ -159,3 +159,4 @@ C:\Users\USER\FerreteriaMS\ComprasAPI\obj\Debug\net10.0\refint\ComprasAPI.dll
 C:\Users\USER\FerreteriaMS\ComprasAPI\obj\Debug\net10.0\ComprasAPI.pdb
 C:\Users\USER\FerreteriaMS\ComprasAPI\obj\Debug\net10.0\ComprasAPI.genruntimeconfig.cache
 C:\Users\USER\FerreteriaMS\ComprasAPI\obj\Debug\net10.0\ref\ComprasAPI.dll
+C:\Users\USER\FerreteriaMS\ComprasAPI\obj\Debug\net10.0\ComprasAPI.sourcelink.json

@@ -159,3 +159,4 @@ C:\Users\USER\FerreteriaMS\ClientesAPI\obj\Debug\net10.0\refint\ClientesAPI.dll
 C:\Users\USER\FerreteriaMS\ClientesAPI\obj\Debug\net10.0\ClientesAPI.pdb
 C:\Users\USER\FerreteriaMS\ClientesAPI\obj\Debug\net10.0\ClientesAPI.genruntimeconfig.cache
 C:\Users\USER\FerreteriaMS\ClientesAPI\obj\Debug\net10.0\ref\ClientesAPI.dll
+C:\Users\USER\FerreteriaMS\ClientesAPI\obj\Debug\net10.0\ClientesAPI.sourcelink.json
