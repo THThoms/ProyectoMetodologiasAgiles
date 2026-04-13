@@ -134,7 +134,11 @@ const validarIdentificacion = (valor) => {
         <div style={s.sectionTitle}>👤 Identificación del Cliente</div>
         <div style={s.row}>
           <input style={s.input} value={cedula}
-            onChange={e => setCedula(e.target.value)}
+  onChange={e => {
+    const val = e.target.value
+    
+    if (/^[a-zA-Z0-9]*$/.test(val)) setCedula(val)
+  }}
             onKeyDown={e => e.key === 'Enter' && buscarCliente()}
             placeholder="Ingrese número de cédula..." />
           <button style={s.btnOrange} onClick={buscarCliente}>Buscar</button>
