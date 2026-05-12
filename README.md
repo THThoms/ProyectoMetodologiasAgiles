@@ -77,16 +77,28 @@ verificar_proyecto.bat
 
 ## 4. Flujo de prueba end-to-end (Sprint 1)
 
-Con `AUTH_DEV_LOGIN=true` (default en `.env.example`):
+El Sprint 1 usa **autenticación con dos métodos independientes**:
+
+### Método 1 — Login local con correo y contraseña
 
 1. Abre `http://localhost:3000` → te redirige a `/login`.
-2. En la sección **"Modo desarrollo"**, escribe `admin@uta.edu.ec` y pulsa **Entrar (dev-login)** → vas a `/admin/catalogo`.
-3. Revisa los 6 servicios sembrados, crea uno nuevo, edítalo, desactívalo.
-4. Cierra sesión y entra como `docente@uta.edu.ec` → vas a `/tickets/nuevo`.
-5. Selecciona "Internet / Conectividad", escribe un detalle, arrastra 1-2 imágenes JPG/PNG y envía.
-6. Verás el número `TK-YYYYMMDD-NNN`, el nivel asignado y el estado `abierto`.
+2. Ingresa el correo y contraseña de un usuario sembrado:
+   - `admin@uta.edu.ec` / `admin123` → `/admin/catalogo`
+   - `docente@uta.edu.ec` / `docente123` → `/tickets/nuevo`
+   - `tecn1@uta.edu.ec` / `tecn1123` → `/tickets/nuevo`
+3. Pulsa **Iniciar sesión** → entras directo al dashboard. **NO se pide Microsoft.**
 
-Con SSO real (después de configurar Azure AD, §6):
+### Método 2 — Login simulado Microsoft Office 365
+
+1. Abre `http://localhost:3000/login`.
+2. Pulsa el botón **Microsoft Office 365** (borde naranja).
+3. El sistema usa el correo del campo de arriba (o `docente@uta.edu.ec` por defecto).
+4. Entras directo al dashboard. **NO se pide correo ni contraseña.**
+
+> Ambos métodos son **alternativas independientes**. Cada uno genera su propia sesión JWT
+> con `authProvider: "local"` o `authProvider: "microsoft-simulated"`.
+
+### Método 3 — SSO real con Microsoft (después de configurar Azure AD, §6)
 
 - Pulsas **Iniciar sesión con Microsoft** → Microsoft te redirige a Azure AD → confirmas → callback emite JWT → entras al dashboard según rol.
 - Si la cuenta NO termina en `@uta.edu.ec` el sistema te rechaza con mensaje claro.
@@ -97,7 +109,7 @@ Con SSO real (después de configurar Azure AD, §6):
 
 | HU | Microservicio | Responsable | Endpoints / artefacto |
 |----|---------------|-------------|------------------------|
-| HU-01 | `auth-service` | Tomas Solis | `/auth/microsoft`, `/auth/microsoft/callback`, `/auth/me`, `/auth/logout`, `/auth/dev-login`, `/auth/config`, `/auth/verify` |
+| HU-01 | `auth-service` | Tomas Solis | `/auth/login`, `/auth/microsoft-simulate`, `/auth/microsoft`, `/auth/microsoft/callback`, `/auth/me`, `/auth/logout`, `/auth/dev-login`, `/auth/config`, `/auth/verify` |
 | HU-02 | `api-gateway` + `docker-compose.yml` | Tomas Solis | `/api/auth/**`, `/api/catalog/**`, `/api/tickets/**` |
 | HU-03 | `catalog-service` | Manolo Garcia | `GET /services`, `GET /services/:id`, `POST /services`, `PATCH /services/:id`, `DELETE /services/:id` (+ seed con los 6 servicios institucionales) |
 | HU-04 | `ticket-service` | Carla Paredes | `POST /tickets` (multipart, hasta 5 imágenes 5MB), `GET /tickets`, `GET /tickets/:id` |

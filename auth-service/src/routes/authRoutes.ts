@@ -6,12 +6,103 @@ import {
   upsertUserFromMicrosoft,
   issueSession,
   revokeSession,
+  loginWithPassword,
+  microsoftSimulatedLogin,
+  logAccess,
   DomainNotAllowedError,
+  InvalidCredentialsError,
   MicrosoftClaims,
 } from "../services/authService";
 import { prisma } from "../db/client";
 
 const router = Router();
+
+// ---------------------------------------------------------------------------
+// POST /auth/login -> Login local con correo y contraseña
+// ---------------------------------------------------------------------------
+router.post("/login", async (req: Request, res: Response) => {
+  const correo = String(req.body?.correo ?? req.body?.email ?? "").trim();
+  const password = String(req.body?.password ?? "");
+
+  if (!correo || !password) {
+    return res.status(400).json({ error: "Correo y contraseña son requeridos" });
+  }
+
+  try {
+    const user = await loginWithPassword(correo, password);
+    const { token } = await issueSession(user, "local");
+
+    // Registrar log de acceso
+    await logAccess({
+      userId: user.id,
+      userEmail: user.email,
+      userName: user.name,
+      endpoint: "/auth/login",
+      authProvider: "local",
+    });
+
+    return res.json({
+      token,
+      authProvider: "local",
+      user: {
+        idUsuario: user.id,
+        nombres: user.name.split(" ")[0] || user.name,
+        apellidos: user.name.split(" ").slice(1).join(" ") || "",
+        correo: user.email,
+        rol: user.role,
+      },
+    });
+  } catch (err) {
+    if (err instanceof InvalidCredentialsError) {
+      return res.status(401).json({ error: err.message });
+    }
+    if (err instanceof DomainNotAllowedError) {
+      return res.status(403).json({ error: err.message });
+    }
+    console.error("Error en login local:", err);
+    return res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /auth/microsoft-simulate -> Login simulado Microsoft Office 365
+// No se conecta a Microsoft real. Devuelve un usuario institucional simulado.
+// ---------------------------------------------------------------------------
+router.post("/microsoft-simulate", async (req: Request, res: Response) => {
+  const email = String(req.body?.email ?? req.body?.correo ?? "docente@uta.edu.ec").trim();
+
+  try {
+    const user = await microsoftSimulatedLogin(email);
+    const { token } = await issueSession(user, "microsoft-simulated");
+
+    // Registrar log de acceso
+    await logAccess({
+      userId: user.id,
+      userEmail: user.email,
+      userName: user.name,
+      endpoint: "/auth/microsoft-simulate",
+      authProvider: "microsoft-simulated",
+    });
+
+    return res.json({
+      token,
+      authProvider: "microsoft-simulated",
+      user: {
+        idUsuario: user.id,
+        nombres: user.name.split(" ")[0] || user.name,
+        apellidos: user.name.split(" ").slice(1).join(" ") || "Microsoft",
+        correo: user.email,
+        rol: user.role,
+      },
+    });
+  } catch (err) {
+    if (err instanceof DomainNotAllowedError) {
+      return res.status(403).json({ error: err.message });
+    }
+    console.error("Error en login Microsoft simulado:", err);
+    return res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // GET /auth/microsoft -> Redirige al login de Microsoft
@@ -67,7 +158,16 @@ router.get("/microsoft/callback", async (req: Request, res: Response) => {
 
     const claims = (tokenResponse.idTokenClaims ?? {}) as MicrosoftClaims;
     const user = await upsertUserFromMicrosoft(claims);
-    const { token } = await issueSession(user);
+    const { token } = await issueSession(user, "microsoft");
+
+    // Registrar log de acceso
+    await logAccess({
+      userId: user.id,
+      userEmail: user.email,
+      userName: user.name,
+      endpoint: "/auth/microsoft/callback",
+      authProvider: "microsoft",
+    });
 
     // Pasamos el JWT al frontend por query string. El frontend lo guarda en localStorage
     // y limpia la URL para no dejar el token en el historial.
@@ -108,7 +208,17 @@ router.post("/dev-login", async (req: Request, res: Response) => {
       error: "Usuario no encontrado. Ejecuta el seed o crea el usuario primero.",
     });
   }
-  const { token } = await issueSession(user);
+  const { token } = await issueSession(user, "local");
+
+  // Registrar log de acceso
+  await logAccess({
+    userId: user.id,
+    userEmail: user.email,
+    userName: user.name,
+    endpoint: "/auth/dev-login",
+    authProvider: "local",
+  });
+
   return res.json({
     token,
     user: { id: user.id, email: user.email, name: user.name, role: user.role },
@@ -123,6 +233,7 @@ router.get("/config", (_req: Request, res: Response) => {
     ssoConfigured: env.ssoConfigured,
     devLoginEnabled: env.devLoginEnabled,
     allowedDomain: env.allowedDomain,
+    microsoftSimulateEnabled: true, // Siempre habilitado en Sprint 1
   });
 });
 

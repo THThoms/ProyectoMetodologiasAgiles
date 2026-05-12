@@ -28,6 +28,14 @@
            transition hover:bg-gray-50
            focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-uta-500;
   }
+  /* Botón Microsoft Office 365 simulado - borde naranja/amarillo institucional */
+  .btn-ms365 {
+    @apply inline-flex items-center justify-center gap-3 rounded-md
+           border-2 border-amber-500 bg-white px-6 py-3 font-semibold text-gray-800 shadow-sm
+           transition hover:bg-amber-50 hover:border-amber-600
+           focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500
+           disabled:cursor-not-allowed disabled:opacity-60;
+  }
   /* Inputs con borde rosa institucional */
   .input {
     @apply block w-full rounded-md border border-uta-300 bg-white px-3 py-2

@@ -8,6 +8,7 @@ interface AuthConfig {
   ssoConfigured: boolean;
   devLoginEnabled: boolean;
   allowedDomain: string;
+  microsoftSimulateEnabled?: boolean;
 }
 
 // Traduce ?error=... del callback de Azure AD a mensajes legibles para el usuario.
@@ -33,9 +34,16 @@ export default function Login() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [config, setConfig] = useState<AuthConfig | null>(null);
-  const [devEmail, setDevEmail] = useState("admin@uta.edu.ec");
-  const [devError, setDevError] = useState<string | null>(null);
-  const [submittingDev, setSubmittingDev] = useState(false);
+
+  // Estado del login local (correo + contraseña)
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [submittingLocal, setSubmittingLocal] = useState(false);
+
+  // Estado del login Microsoft simulado
+  const [msError, setMsError] = useState<string | null>(null);
+  const [submittingMs, setSubmittingMs] = useState(false);
 
   const urlError = params.get("error");
 
@@ -43,31 +51,60 @@ export default function Login() {
     api
       .get<AuthConfig>("/api/auth/config")
       .then((r) => setConfig(r.data))
-      .catch(() => setConfig({ ssoConfigured: false, devLoginEnabled: false, allowedDomain: "uta.edu.ec" }));
+      .catch(() =>
+        setConfig({
+          ssoConfigured: false,
+          devLoginEnabled: false,
+          allowedDomain: "uta.edu.ec",
+          microsoftSimulateEnabled: true,
+        })
+      );
   }, []);
 
-  function loginMicrosoft() {
-    // No usamos axios porque el endpoint hace redirect 302 hacia login.microsoftonline.com
-    window.location.href = `${
-      (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:8080"
-    }/api/auth/microsoft`;
+  // -----------------------------------------------------------------
+  // CASO 1: Login local con correo y contraseña
+  // -----------------------------------------------------------------
+  async function handleLocalLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLocalError(null);
+    setSubmittingLocal(true);
+    try {
+      const { data } = await api.post<{ token: string; authProvider: string }>(
+        "/api/auth/login",
+        { correo: email, password }
+      );
+      saveToken(data.token, "local");
+      const user = decodeToken(data.token);
+      navigate(user ? landingRouteFor(user.role) : "/tickets/nuevo", {
+        replace: true,
+      });
+    } catch (err) {
+      setLocalError(extractApiError(err));
+    } finally {
+      setSubmittingLocal(false);
+    }
   }
 
-  async function loginDev(e: React.FormEvent) {
-    e.preventDefault();
-    setDevError(null);
-    setSubmittingDev(true);
+  // -----------------------------------------------------------------
+  // CASO 2: Login simulado con Microsoft Office 365
+  // -----------------------------------------------------------------
+  async function handleMicrosoftSimulatedLogin() {
+    setMsError(null);
+    setSubmittingMs(true);
     try {
-      const { data } = await api.post<{ token: string }>("/api/auth/dev-login", {
-        email: devEmail,
-      });
-      saveToken(data.token);
+      const { data } = await api.post<{ token: string; authProvider: string }>(
+        "/api/auth/microsoft-simulate",
+        { email: email || "docente@uta.edu.ec" }
+      );
+      saveToken(data.token, "microsoft-simulated");
       const user = decodeToken(data.token);
-      navigate(user ? landingRouteFor(user.role) : "/tickets/nuevo", { replace: true });
+      navigate(user ? landingRouteFor(user.role) : "/tickets/nuevo", {
+        replace: true,
+      });
     } catch (err) {
-      setDevError(extractApiError(err));
+      setMsError(extractApiError(err));
     } finally {
-      setSubmittingDev(false);
+      setSubmittingMs(false);
     }
   }
 
@@ -85,7 +122,9 @@ export default function Login() {
             </div>
             <div>
               <div className="text-lg font-bold tracking-wide">SERVICEDESK UTA</div>
-              <div className="text-xs text-uta-100/80">FISEI · Facultad de Ingeniería en Sistemas</div>
+              <div className="text-xs text-uta-100/80">
+                FISEI · Facultad de Ingeniería en Sistemas
+              </div>
             </div>
           </div>
         </div>
@@ -101,62 +140,117 @@ export default function Login() {
               Universidad Técnica de Ambato
             </p>
 
+            {/* Error del callback de Azure AD */}
             {errorMsg && (
               <div className="mb-4 rounded-md border border-uta-300 bg-uta-100 px-4 py-3 text-sm text-uta-900">
                 {errorMsg}
               </div>
             )}
 
-            {/* Botón Microsoft (oficial) */}
-            <button
-              onClick={loginMicrosoft}
-              disabled={!config?.ssoConfigured}
-              className="btn-microsoft w-full"
-              title={
-                config?.ssoConfigured
-                  ? "Iniciar sesión con Microsoft"
-                  : "El SSO con Microsoft aún no está configurado"
-              }
-            >
-              <MicrosoftLogo size={20} />
-              <span>Iniciar sesión con Microsoft</span>
-            </button>
+            {/* ============================================================ */}
+            {/* FORMULARIO: Login local con correo y contraseña              */}
+            {/* ============================================================ */}
+            <form onSubmit={handleLocalLogin} className="space-y-4">
+              <div>
+                <label className="label" htmlFor="login-email">
+                  Correo electrónico
+                </label>
+                <input
+                  id="login-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="input"
+                  placeholder={`usuario@${domain}`}
+                  required
+                  autoComplete="email"
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="login-password">
+                  Contraseña
+                </label>
+                <input
+                  id="login-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="input"
+                  placeholder="••••••••"
+                  required
+                  autoComplete="current-password"
+                />
+              </div>
+
+              {localError && (
+                <p className="text-sm font-medium text-red-600">{localError}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={submittingLocal}
+                className="btn-primary w-full"
+              >
+                {submittingLocal ? "Iniciando sesión..." : "Iniciar sesión"}
+              </button>
+            </form>
+
+            {/* Enlace olvidaste contraseña */}
             <p className="mt-3 text-center text-xs text-gray-500">
-              Solo se aceptan cuentas del dominio <strong>@{domain}</strong>
+              <a href="#" className="text-uta-700 hover:underline">
+                ¿Olvidaste tu contraseña?
+              </a>
             </p>
 
-            {/* Bloque dev-login (solo si está habilitado en backend) */}
+            {/* ============================================================ */}
+            {/* BOTÓN: Microsoft Office 365 (simulado)                       */}
+            {/* ============================================================ */}
+            <div className="mt-5">
+              <div className="relative mb-4">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-200" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white px-3 text-gray-400">o continúa con</span>
+                </div>
+              </div>
+
+              {msError && (
+                <p className="mb-2 text-sm font-medium text-red-600">{msError}</p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleMicrosoftSimulatedLogin}
+                disabled={submittingMs}
+                className="btn-ms365 w-full"
+              >
+                <MicrosoftLogo size={20} />
+                <span>
+                  {submittingMs ? "Conectando..." : "Microsoft Office 365"}
+                </span>
+              </button>
+
+              <p className="mt-3 text-center text-xs text-gray-500">
+                Solo se aceptan cuentas del dominio{" "}
+                <strong>@{domain}</strong>
+              </p>
+            </div>
+
+            {/* ============================================================ */}
+            {/* BLOQUE DEV-LOGIN (solo si está habilitado en backend)        */}
+            {/* ============================================================ */}
             {config?.devLoginEnabled && (
-              <div className="mt-8 border-t border-uta-100 pt-6">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-uta-700">
-                  Modo desarrollo
-                </p>
-                <p className="mb-3 text-xs text-gray-600">
-                  Mientras Azure AD se configura, puedes entrar con un usuario sembrado
-                  (admin@uta.edu.ec, tecn1@uta.edu.ec, docente@uta.edu.ec, etc.).
-                </p>
-                <form onSubmit={loginDev} className="space-y-3">
-                  <div>
-                    <label className="label" htmlFor="dev-email">
-                      Email institucional
-                    </label>
-                    <input
-                      id="dev-email"
-                      type="email"
-                      value={devEmail}
-                      onChange={(e) => setDevEmail(e.target.value)}
-                      className="input"
-                      placeholder={`usuario@${domain}`}
-                      required
-                    />
-                  </div>
-                  {devError && (
-                    <p className="text-sm font-medium text-uta-700">{devError}</p>
-                  )}
-                  <button type="submit" disabled={submittingDev} className="btn-secondary w-full">
-                    {submittingDev ? "Entrando..." : "Entrar (dev-login)"}
-                  </button>
-                </form>
+              <div className="mt-6 border-t border-uta-100 pt-4">
+                <details className="text-xs text-gray-500">
+                  <summary className="cursor-pointer font-semibold uppercase tracking-wide text-uta-700">
+                    Modo desarrollo (dev-login)
+                  </summary>
+                  <p className="mt-2 mb-1 text-gray-600">
+                    Usuarios de prueba: admin@uta.edu.ec (admin123),
+                    docente@uta.edu.ec (docente123), tecn1@uta.edu.ec (tecn1123).
+                  </p>
+                </details>
               </div>
             )}
           </div>

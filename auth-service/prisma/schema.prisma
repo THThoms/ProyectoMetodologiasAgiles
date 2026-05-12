@@ -26,20 +26,23 @@ enum Role {
 }
 
 // -----------------------------------------------------------------------------
-// users - Espejo local del usuario autenticado vía Microsoft Azure AD.
+// users - Espejo local del usuario autenticado vía Microsoft Azure AD o local.
 // `ms_oid` (object id de Azure) garantiza unicidad incluso si el email cambia.
+// `password_hash` almacena la contraseña hasheada para login local.
 // -----------------------------------------------------------------------------
 model User {
-  id         String    @id @default(uuid()) @db.Uuid
-  email      String    @unique
-  name       String
-  role       Role      @default(user)
-  msOid      String?   @unique @map("ms_oid")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
+  id            String    @id @default(uuid()) @db.Uuid
+  email         String    @unique
+  name          String
+  role          Role      @default(user)
+  msOid         String?   @unique @map("ms_oid")
+  passwordHash  String?   @map("password_hash")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   // Relación 1:N con sesiones emitidas (auditoría / logout)
   sessions   Session[]
+  authLogs   AuthLog[]
 
   @@map("users")
   @@index([email])
@@ -48,18 +51,40 @@ model User {
 // -----------------------------------------------------------------------------
 // sessions - Tokens JWT emitidos. Permiten invalidar sesiones específicas.
 // `expires_at` lo controla la app, no la BD (para alinear con `JWT_EXPIRES_IN`).
+// `auth_provider` indica cómo inició sesión: local, microsoft, microsoft-simulated.
 // -----------------------------------------------------------------------------
 model Session {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String   @map("user_id") @db.Uuid
-  token      String   @unique @db.Text
-  expiresAt  DateTime @map("expires_at")
-  revokedAt  DateTime? @map("revoked_at")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  token        String    @unique @db.Text
+  authProvider String    @default("local") @map("auth_provider")
+  expiresAt    DateTime  @map("expires_at")
+  revokedAt    DateTime? @map("revoked_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
 
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sessions")
   @@index([userId])
   @@index([token])
+}
+
+// -----------------------------------------------------------------------------
+// auth_logs - Registro de accesos al sistema (auditoría).
+// -----------------------------------------------------------------------------
+model AuthLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  userEmail    String   @map("user_email")
+  userName     String   @map("user_name")
+  endpoint     String
+  authProvider String   @map("auth_provider")
+  accessDate   DateTime @default(now()) @map("access_date")
+
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("auth_logs")
+  @@index([userId])
+  @@index([userEmail])
+  @@index([accessDate])
 }

@@ -8,6 +8,7 @@ export interface AuthTokenPayload extends JwtPayload {
   email: string;
   name: string;
   role: Role;
+  authProvider?: string;
 }
 
 export function signAuthToken(payload: Omit<AuthTokenPayload, "iat" | "exp">): string {

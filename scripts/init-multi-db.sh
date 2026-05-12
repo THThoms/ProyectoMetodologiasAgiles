@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # Inicializa 3 bases aisladas en una sola instancia de Postgres,
-# cada una con su propio usuario (principio de privilegio mínimo).
+# cada una con su propio usuario (principio de privilegio mÃ­nimo).
 # Se ejecuta UNA sola vez al levantar el contenedor postgres por primera vez
 # (se monta en /docker-entrypoint-initdb.d/).
 # =============================================================================
