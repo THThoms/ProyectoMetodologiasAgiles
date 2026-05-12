@@ -1,0 +1,76 @@
+// =============================================================================
+// ticket-service - Schema Prisma (ticket_db)
+// Cada ticket queda asociado a un usuario (FK lógica al auth_db) y a un
+// servicio (FK lógica al catalog_db). NO usamos foreign keys cruzadas:
+// la integridad se mantiene a nivel aplicación (microservicios independientes).
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Estados del ciclo de vida del ticket. Sprint 1 solo usa `abierto`.
+// -----------------------------------------------------------------------------
+enum TicketStatus {
+  abierto
+  en_proceso
+  resuelto
+  cerrado
+}
+
+// Mismo enum que catalog-service.Level. Lo replicamos porque cada microservicio
+// es autónomo y no comparte código con el catalog.
+enum Level {
+  N1
+  N2
+  N3
+  N4
+}
+
+// -----------------------------------------------------------------------------
+// tickets - Cabecera del ticket. `number` es el identificador humano (TK-YYYYMMDD-NNN).
+// `level_assigned` se rellena al crear el ticket consultando catalog-service.
+// -----------------------------------------------------------------------------
+model Ticket {
+  id              String        @id @default(uuid()) @db.Uuid
+  number          String        @unique
+  userId          String        @map("user_id") @db.Uuid     // FK lógica -> auth_db.users.id
+  serviceId       String        @map("service_id") @db.Uuid  // FK lógica -> catalog_db.services.id
+  detail          String        @db.Text
+  status          TicketStatus  @default(abierto)
+  levelAssigned   Level         @map("level_assigned")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  // Relación 1:N con los archivos adjuntos (1..5).
+  attachments     Attachment[]
+
+  @@map("tickets")
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// -----------------------------------------------------------------------------
+// attachments - Imágenes adjuntas. Guardamos `file_path` relativo a /app/uploads
+// para que el contenedor pueda servirlas via `/uploads/<file>`.
+// -----------------------------------------------------------------------------
+model Attachment {
+  id          String   @id @default(uuid()) @db.Uuid
+  ticketId    String   @map("ticket_id") @db.Uuid
+  filePath    String   @map("file_path")
+  fileSize    Int      @map("file_size")
+  mimeType    String   @map("mime_type")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+  @@index([ticketId])
+}

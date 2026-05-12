@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+**/dist/
+**/build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Prisma
+**/prisma/migrations/dev.db*
+
+# Uploads (kept inside container; ignored locally)
+**/uploads/*
+!**/uploads/.gitkeep
+
+# Test coverage
+coverage/
+**/coverage/
+
+# Temporary
+*.tmp
+*.temp
+.cache/
+
+# Docker volumes (mounted)
+postgres-data/
+
+# Misc
+*.crdownload
+SCRUM_ServiceDesk_2Sprints*.docx

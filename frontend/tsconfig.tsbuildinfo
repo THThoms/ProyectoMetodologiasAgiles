@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/layout.tsx","./src/components/microsoftlogo.tsx","./src/components/protectedroute.tsx","./src/lib/api.ts","./src/lib/auth.ts","./src/pages/admincatalogo.tsx","./src/pages/authcallback.tsx","./src/pages/login.tsx","./src/pages/nuevoticket.tsx"],"version":"5.9.3"}
