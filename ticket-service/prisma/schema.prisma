@@ -43,6 +43,7 @@ model Ticket {
   userId          String        @map("user_id") @db.Uuid     // FK lógica -> auth_db.users.id
   serviceId       String        @map("service_id") @db.Uuid  // FK lógica -> catalog_db.services.id
   detail          String        @db.Text
+  location        String?       @db.VarChar(255)   // Ubicación física (laboratorio, aula, edificio) — opcional
   status          TicketStatus  @default(abierto)
   levelAssigned   Level         @map("level_assigned")
   createdAt       DateTime      @default(now()) @map("created_at")

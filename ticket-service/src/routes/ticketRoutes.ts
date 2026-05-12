@@ -16,6 +16,7 @@ const router = Router();
 const createSchema = z.object({
   serviceId: z.string().uuid({ message: "serviceId debe ser un UUID válido" }),
   detail: z.string().min(5, "El detalle debe tener al menos 5 caracteres").max(5000),
+  location: z.string().max(255).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -66,7 +67,7 @@ router.post(
       cleanupFiles(files);
       return res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
     }
-    const { serviceId, detail } = parsed.data;
+    const { serviceId, detail, location } = parsed.data;
 
     // Obtener nivel del catálogo. El JWT del usuario se reenvía para que el
     // catalog-service pueda autorizar (aunque GET /services/:id es público).
@@ -103,6 +104,7 @@ router.post(
           userId: req.user!.userId,
           serviceId,
           detail,
+          location: location || null,
           levelAssigned: level,
           attachments: {
             create: files.map((f) => ({

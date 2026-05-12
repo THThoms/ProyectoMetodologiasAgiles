@@ -23,10 +23,45 @@ const MAX_SIZE_MB = 5;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 const ACCEPTED = ["image/jpeg", "image/png", "image/jpg"];
 
+// Servicios que requieren indicar ubicación física (daño a equipos, problemas en laboratorios/aulas)
+const LOCATION_SERVICE_KEYWORDS = [
+  "equipo",
+  "hardware",
+  "software",
+  "internet",
+  "conectividad",
+];
+
+// Sugerencias de ubicaciones dentro de la universidad
+const LOCATION_SUGGESTIONS = [
+  "Laboratorio 1 - FISEI",
+  "Laboratorio 2 - FISEI",
+  "Laboratorio 3 - FISEI",
+  "Laboratorio 4 - FISEI",
+  "Laboratorio de Redes - FISEI",
+  "Laboratorio de Electrónica - FISEI",
+  "Aula A1 - FISEI",
+  "Aula A2 - FISEI",
+  "Aula A3 - FISEI",
+  "Aula B1 - FISEI",
+  "Aula B2 - FISEI",
+  "Sala de Docentes - FISEI",
+  "Oficina de Decanato - FISEI",
+  "Biblioteca - FISEI",
+  "Centro de Cómputo General",
+  "Otro (especificar en detalle)",
+];
+
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+/** Determina si un servicio requiere que el usuario indique ubicación física */
+function requiresLocation(serviceName: string): boolean {
+  const lower = serviceName.toLowerCase();
+  return LOCATION_SERVICE_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
 export default function NuevoTicket() {
@@ -36,6 +71,8 @@ export default function NuevoTicket() {
   const [loadingServices, setLoadingServices] = useState(true);
   const [serviceId, setServiceId] = useState<string>("");
   const [detail, setDetail] = useState("");
+  const [location, setLocation] = useState("");
+  const [customLocation, setCustomLocation] = useState("");
 
   const [files, setFiles] = useState<File[]>([]);
   const [dragOver, setDragOver] = useState(false);
@@ -49,6 +86,15 @@ export default function NuevoTicket() {
     year: "numeric", month: "long", day: "numeric",
   }), []);
 
+  // El servicio actualmente seleccionado
+  const selectedService = useMemo(
+    () => services.find((s) => s.id === serviceId),
+    [services, serviceId]
+  );
+
+  // ¿Mostrar el campo de ubicación?
+  const showLocation = selectedService ? requiresLocation(selectedService.name) : false;
+
   useEffect(() => {
     api
       .get<{ services: CatalogService[] }>("/api/catalog/services")
@@ -56,6 +102,14 @@ export default function NuevoTicket() {
       .catch((err) => setError(extractApiError(err)))
       .finally(() => setLoadingServices(false));
   }, []);
+
+  // Resetear ubicación al cambiar de servicio
+  useEffect(() => {
+    if (!showLocation) {
+      setLocation("");
+      setCustomLocation("");
+    }
+  }, [showLocation]);
 
   function addFiles(incoming: FileList | File[]) {
     setError(null);
@@ -85,6 +139,14 @@ export default function NuevoTicket() {
     setFiles((prev) => prev.filter((_, i) => i !== idx));
   }
 
+  function getEffectiveLocation(): string | undefined {
+    if (!showLocation) return undefined;
+    if (location.startsWith("Otro")) {
+      return customLocation.trim() || undefined;
+    }
+    return location || undefined;
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -96,10 +158,16 @@ export default function NuevoTicket() {
       setError("El detalle debe tener al menos 5 caracteres.");
       return;
     }
+    if (showLocation && !getEffectiveLocation()) {
+      setError("Indica la ubicación donde se presenta el problema.");
+      return;
+    }
     setSubmitting(true);
     const form = new FormData();
     form.append("serviceId", serviceId);
     form.append("detail", detail);
+    const loc = getEffectiveLocation();
+    if (loc) form.append("location", loc);
     for (const f of files) form.append("attachments", f);
     try {
       const { data } = await api.post<{ ticket: CreatedTicket }>(
@@ -111,6 +179,8 @@ export default function NuevoTicket() {
       // Reset
       setDetail("");
       setServiceId("");
+      setLocation("");
+      setCustomLocation("");
       setFiles([]);
     } catch (err) {
       setError(extractApiError(err));
@@ -146,8 +216,7 @@ export default function NuevoTicket() {
           <div className="card mb-6 border-ok-50 bg-ok-50/40">
             <h2 className="mb-2 text-lg font-bold text-ok-900">¡Ticket creado!</h2>
             <p className="text-sm text-gray-700">
-              Número: <strong>{created.number}</strong> · Nivel asignado:{" "}
-              <span className="badge-level">{created.levelAssigned}</span> · Estado:{" "}
+              Número: <strong>{created.number}</strong> · Estado:{" "}
               <span className="badge-ok">{created.status}</span>
             </p>
             <p className="mt-2 text-xs text-gray-600">
@@ -173,14 +242,63 @@ export default function NuevoTicket() {
               </option>
               {services.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} · Nivel inicial {s.levelEntry}
+                  {s.name}
                 </option>
               ))}
             </select>
-            <p className="mt-2 text-xs text-gray-500">
-              El ticket será asignado automáticamente al nivel técnico según el servicio seleccionado.
-            </p>
+            {selectedService?.description && (
+              <p className="mt-2 text-xs text-gray-500">
+                {selectedService.description}
+              </p>
+            )}
           </div>
+
+          {/* Ubicación (condicional) */}
+          {showLocation && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-4 space-y-3 transition-all duration-300">
+              <div className="flex items-center gap-2 mb-1">
+                <svg className="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <label className="block text-sm font-semibold text-amber-900" htmlFor="location">
+                  Ubicación del problema
+                </label>
+              </div>
+              <p className="text-xs text-amber-700">
+                Indica el laboratorio, aula o lugar donde se presenta el problema.
+              </p>
+              <select
+                id="location"
+                className="input border-amber-300 focus:border-amber-500 focus:ring-amber-500/30"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                disabled={submitting}
+                required
+              >
+                <option value="">Selecciona la ubicación</option>
+                {LOCATION_SUGGESTIONS.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
+              {location.startsWith("Otro") && (
+                <input
+                  type="text"
+                  className="input border-amber-300 focus:border-amber-500 focus:ring-amber-500/30"
+                  placeholder="Escribe la ubicación exacta..."
+                  value={customLocation}
+                  onChange={(e) => setCustomLocation(e.target.value)}
+                  disabled={submitting}
+                  required
+                  maxLength={255}
+                />
+              )}
+            </div>
+          )}
 
           {/* Detalle */}
           <div>
