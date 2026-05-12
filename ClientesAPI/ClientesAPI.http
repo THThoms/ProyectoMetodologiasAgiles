@@ -1,6 +1,0 @@
-@ClientesAPI_HostAddress = http://localhost:5014
-
-GET {{ClientesAPI_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
