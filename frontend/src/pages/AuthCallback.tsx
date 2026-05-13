@@ -2,16 +2,18 @@ import { useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { decodeToken, landingRouteFor, saveToken } from "../lib/auth";
 
-// Recibe el JWT del auth-service en el query string, lo guarda en localStorage
-// y redirige al dashboard correspondiente según el rol del usuario.
+// Recibe el token en el query (después del callback de Microsoft + auth-service),
+// lo guarda en localStorage y navega al dashboard según rol.
 export default function AuthCallback() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
 
   useEffect(() => {
     const token = params.get("token");
+    const errorCode = params.get("error");
+
     if (!token) {
-      navigate("/login?error=missing_code", { replace: true });
+      navigate(`/login?error=${errorCode ?? "missing_code"}`, { replace: true });
       return;
     }
     const user = decodeToken(token);
@@ -19,7 +21,7 @@ export default function AuthCallback() {
       navigate("/login?error=auth_failed", { replace: true });
       return;
     }
-    saveToken(token);
+    saveToken(token, "microsoft");
     navigate(landingRouteFor(user.role), { replace: true });
   }, [params, navigate]);
 

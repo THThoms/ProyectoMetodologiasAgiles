@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { getMsalClient, SCOPES } from "../msal/client";
+import { getMsalClient, SCOPES } from "../config/msal.config";
 import { env } from "../config/env";
 import { verifyJwt } from "../middleware/verifyJwt";
 import {
@@ -107,21 +107,28 @@ router.post("/microsoft-simulate", async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // GET /auth/microsoft -> Redirige al login de Microsoft
 // ---------------------------------------------------------------------------
-router.get("/microsoft", async (_req: Request, res: Response) => {
+router.get("/microsoft", async (req: Request, res: Response) => {
   if (!env.ssoConfigured) {
     return res.status(503).json({
       error: "SSO no configurado",
       detail:
-        "Faltan variables AZURE_AD_CLIENT_ID / AZURE_AD_TENANT_ID / AZURE_AD_CLIENT_SECRET / AZURE_AD_REDIRECT_URI.",
+        "Faltan variables MICROSOFT_CLIENT_ID / MICROSOFT_TENANT_ID / MICROSOFT_CLIENT_SECRET / MICROSOFT_REDIRECT_URI.",
     });
   }
   try {
+    // El frontend puede pasar ?login_hint=usuario@uta.edu.ec para pre-rellenar
+    // el formulario de Microsoft y saltar la pantalla "elige una cuenta".
+    const loginHint =
+      typeof req.query.login_hint === "string" && req.query.login_hint.trim() !== ""
+        ? req.query.login_hint.trim()
+        : undefined;
+
     const url = await getMsalClient().getAuthCodeUrl({
       scopes: SCOPES,
-      redirectUri: env.azure.redirectUri,
-      // Forzar selección de cuenta evita SSO transparente cuando se quiere cambiar de usuario;
-      // si la sesión Microsoft está activa para una sola cuenta, igual entra sin pedir credenciales.
-      prompt: "select_account",
+      redirectUri: env.microsoft.redirectUri,
+      loginHint,
+      // Si NO hay hint, forzamos selección de cuenta. Con hint, Microsoft usa el hint.
+      prompt: loginHint ? undefined : "select_account",
     });
     return res.redirect(url);
   } catch (err) {
@@ -131,9 +138,10 @@ router.get("/microsoft", async (_req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /auth/microsoft/callback -> Recibe code, valida tenant, emite JWT
+// GET /auth/callback -> Recibe code, valida tenant, emite JWT y redirige al frontend.
+// (También expuesto como /auth/microsoft/callback para retrocompatibilidad.)
 // ---------------------------------------------------------------------------
-router.get("/microsoft/callback", async (req: Request, res: Response) => {
+async function microsoftCallbackHandler(req: Request, res: Response) {
   if (!env.ssoConfigured) {
     return res.redirect(`${env.frontendUrl}/login?error=sso_not_configured`);
   }
@@ -153,25 +161,23 @@ router.get("/microsoft/callback", async (req: Request, res: Response) => {
     const tokenResponse = await getMsalClient().acquireTokenByCode({
       code,
       scopes: SCOPES,
-      redirectUri: env.azure.redirectUri,
+      redirectUri: env.microsoft.redirectUri,
     });
 
     const claims = (tokenResponse.idTokenClaims ?? {}) as MicrosoftClaims;
     const user = await upsertUserFromMicrosoft(claims);
     const { token } = await issueSession(user, "microsoft");
 
-    // Registrar log de acceso
     await logAccess({
       userId: user.id,
       userEmail: user.email,
       userName: user.name,
-      endpoint: "/auth/microsoft/callback",
+      endpoint: "/auth/callback",
       authProvider: "microsoft",
     });
 
-    // Pasamos el JWT al frontend por query string. El frontend lo guarda en localStorage
-    // y limpia la URL para no dejar el token en el historial.
-    return res.redirect(`${env.frontendUrl}/auth/callback?token=${token}`);
+    // El frontend lee el token desde el query y lo guarda en localStorage.
+    return res.redirect(`${env.frontendUrl}/auth/success?token=${token}`);
   } catch (err) {
     if (err instanceof DomainNotAllowedError) {
       return res.redirect(
@@ -181,7 +187,10 @@ router.get("/microsoft/callback", async (req: Request, res: Response) => {
     console.error("Error en callback Microsoft:", err);
     return res.redirect(`${env.frontendUrl}/login?error=auth_failed`);
   }
-});
+}
+
+router.get("/callback", microsoftCallbackHandler);
+router.get("/microsoft/callback", microsoftCallbackHandler);
 
 // ---------------------------------------------------------------------------
 // POST /auth/dev-login -> Solo desarrollo (AUTH_DEV_LOGIN=true)

@@ -4,13 +4,14 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Paleta institucional en tonos azules
         uta: {
-          50:  "#FEF2F2",
-          100: "#FEE2E2",
-          300: "#FCA5A5",
-          500: "#DC2626",
-          700: "#991B1B",
-          900: "#5C0A0A",
+          50:  "#EFF6FF",
+          100: "#DBEAFE",
+          300: "#93C5FD",
+          500: "#2563EB",
+          700: "#1D4ED8",
+          900: "#1E3A8A",
         },
         ok: {
           50:  "#D1FAE5",

@@ -1,12 +1,12 @@
 import { PrismaClient, Role } from "@prisma/client";
-import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-// Hash simple para contraseñas de desarrollo (SHA-256).
-// En producción real se usaría bcrypt o argon2.
+const BCRYPT_ROUNDS = 12;
+
 function hashPassword(password: string): string {
-  return crypto.createHash("sha256").update(password).digest("hex");
+  return bcrypt.hashSync(password, BCRYPT_ROUNDS);
 }
 
 // Usuarios de prueba para desarrollo.
@@ -14,6 +14,7 @@ function hashPassword(password: string): string {
 // Cada usuario tiene una contraseña por defecto para el login local.
 const seedUsers: Array<{ email: string; name: string; role: Role; password: string }> = [
   { email: "admin@uta.edu.ec",       name: "Administrador UTA",          role: Role.admin,   password: "admin123" },
+  { email: "msolis5357@uta.edu.ec",  name: "Tomás Solís (Admin)",        role: Role.admin,   password: "msolis123" },
   { email: "tecn1@uta.edu.ec",       name: "Técnico Nivel 1 (Básico)",   role: Role.tech_n1, password: "tecn1123" },
   { email: "tecn2@uta.edu.ec",       name: "Técnico Nivel 2 (Profes.)",  role: Role.tech_n2, password: "tecn2123" },
   { email: "tecn3@uta.edu.ec",       name: "Técnico Nivel 3 (DITIC)",    role: Role.tech_n3, password: "tecn3123" },
@@ -24,9 +25,19 @@ const seedUsers: Array<{ email: string; name: string; role: Role; password: stri
 
 async function main() {
   for (const u of seedUsers) {
+    // upsert con update solo de nombre/rol; el passwordHash se actualiza solo si
+    // el usuario no tenía o tenía un hash legacy (SHA-256 = 64 chars hex, no bcrypt).
+    const existing = await prisma.user.findUnique({ where: { email: u.email } });
+    const needsRehash =
+      !existing?.passwordHash || !existing.passwordHash.startsWith("$2");
+
     await prisma.user.upsert({
       where: { email: u.email },
-      update: { name: u.name, role: u.role, passwordHash: hashPassword(u.password) },
+      update: {
+        name: u.name,
+        role: u.role,
+        ...(needsRehash ? { passwordHash: hashPassword(u.password) } : {}),
+      },
       create: {
         email: u.email,
         name: u.name,
@@ -35,7 +46,7 @@ async function main() {
       },
     });
   }
-  console.log(`Seed auth-service: ${seedUsers.length} usuarios de prueba listos (con contraseñas locales)`);
+  console.log(`Seed auth-service: ${seedUsers.length} usuarios listos (contraseñas con bcrypt)`);
 }
 
 main()

@@ -54,20 +54,28 @@ services:
       dockerfile: Dockerfile
     container_name: sd-auth
     restart: unless-stopped
+    # Deshabilitar IPv6 en el contenedor: el resolver Docker devuelve AAAA para
+    # login.microsoftonline.com pero no hay ruta IPv6 -> ENETUNREACH al hacer
+    # acquireTokenByCode. Con IPv6 off, getaddrinfo solo devuelve A records.
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.default.disable_ipv6=1
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: --dns-result-order=ipv4first
       PORT: 3001
       DATABASE_URL: postgresql://${AUTH_DB_USER}:${AUTH_DB_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${AUTH_DB_NAME}?schema=public
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN}
-      AZURE_AD_CLIENT_ID: ${AZURE_AD_CLIENT_ID}
-      AZURE_AD_TENANT_ID: ${AZURE_AD_TENANT_ID}
-      AZURE_AD_CLIENT_SECRET: ${AZURE_AD_CLIENT_SECRET}
-      AZURE_AD_REDIRECT_URI: ${AZURE_AD_REDIRECT_URI}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET}
+      MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI}
       ALLOWED_DOMAIN: ${ALLOWED_DOMAIN}
+      ADMIN_EMAILS: ${ADMIN_EMAILS}
       AUTH_DEV_LOGIN: ${AUTH_DEV_LOGIN}
       FRONTEND_URL: ${FRONTEND_URL}
     networks:

@@ -18,6 +18,7 @@ export default function App() {
       <Route path="/" element={<RootRedirect />} />
       <Route path="/login" element={<Login />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route path="/auth/success" element={<AuthCallback />} />
       <Route
         path="/tickets/nuevo"
         element={

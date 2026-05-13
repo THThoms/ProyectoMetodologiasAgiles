@@ -2,7 +2,10 @@ import { prisma } from "../db/client";
 import { Role } from "@prisma/client";
 import { signAuthToken, getExpiresAt } from "../utils/jwt";
 import { env } from "../config/env";
+import bcrypt from "bcryptjs";
 import crypto from "crypto";
+
+const BCRYPT_ROUNDS = 12;
 
 export interface MicrosoftClaims {
   oid?: string;
@@ -26,9 +29,29 @@ export class InvalidCredentialsError extends Error {
   }
 }
 
-// Hash simple para contraseñas de desarrollo (SHA-256).
+// bcrypt con salt para contraseñas nuevas. Hashes legacy SHA-256 (64 chars hex)
+// se detectan por verifyPassword() y se re-hashean a bcrypt en el siguiente login.
 function hashPassword(password: string): string {
-  return crypto.createHash("sha256").update(password).digest("hex");
+  return bcrypt.hashSync(password, BCRYPT_ROUNDS);
+}
+
+// SHA-256 legacy: usado solo para verificar hashes viejos antes de migrarlos a bcrypt.
+function sha256Hex(value: string): string {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+// Detecta el formato del hash y compara contra la contraseña en claro.
+// Devuelve { ok, legacy } — legacy=true significa que hay que re-hashear con bcrypt.
+function verifyPassword(plain: string, stored: string): { ok: boolean; legacy: boolean } {
+  if (stored.startsWith("$2")) {
+    return { ok: bcrypt.compareSync(plain, stored), legacy: false };
+  }
+  // Hash legacy SHA-256 (sin salt, 64 chars hex). Comparación constant-time
+  // para evitar timing attacks aunque sea código en deprecación.
+  const candidate = sha256Hex(plain);
+  if (candidate.length !== stored.length) return { ok: false, legacy: true };
+  const ok = crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(stored));
+  return { ok, legacy: true };
 }
 
 // Extrae el email del payload de Microsoft (los claims varían según tipo de cuenta).
@@ -40,8 +63,13 @@ function isAllowedDomain(email: string): boolean {
   return email.toLowerCase().endsWith(`@${env.allowedDomain.toLowerCase()}`);
 }
 
-// Provisión automática: si el usuario no existe en la BD local, lo crea con rol `user`.
-// Los roles administrativos se asignan manualmente desde /admin.
+function isAdminEmail(email: string): boolean {
+  return env.adminEmails.includes(email.toLowerCase());
+}
+
+// Provisión automática: si el usuario no existe en la BD local, lo crea con su rol.
+// Los correos listados en ADMIN_EMAILS reciben siempre rol admin (incluso si ya
+// existían con otro rol). El resto se crea como `user` y se puede promover desde /admin.
 export async function upsertUserFromMicrosoft(claims: MicrosoftClaims) {
   const email = extractEmail(claims);
   if (!email) {
@@ -51,17 +79,21 @@ export async function upsertUserFromMicrosoft(claims: MicrosoftClaims) {
     throw new DomainNotAllowedError(email);
   }
 
+  const normalizedEmail = email.toLowerCase();
+  const shouldBeAdmin = isAdminEmail(normalizedEmail);
+
   return prisma.user.upsert({
-    where: { email: email.toLowerCase() },
+    where: { email: normalizedEmail },
     update: {
-      msOid: claims.oid,
+      microsoftId: claims.oid,
       name: claims.name ?? email,
+      ...(shouldBeAdmin ? { role: Role.admin } : {}),
     },
     create: {
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       name: claims.name ?? email,
-      msOid: claims.oid,
-      role: Role.user,
+      microsoftId: claims.oid,
+      role: shouldBeAdmin ? Role.admin : Role.user,
     },
   });
 }
@@ -81,9 +113,17 @@ export async function loginWithPassword(email: string, password: string) {
     throw new InvalidCredentialsError();
   }
 
-  const inputHash = hashPassword(password);
-  if (inputHash !== user.passwordHash) {
+  const { ok, legacy } = verifyPassword(password, user.passwordHash);
+  if (!ok) {
     throw new InvalidCredentialsError();
+  }
+
+  // Migración silenciosa: si el hash era SHA-256 legacy, lo re-hasheamos con bcrypt.
+  if (legacy) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: hashPassword(password) },
+    });
   }
 
   return user;
@@ -100,14 +140,16 @@ export async function microsoftSimulatedLogin(email?: string) {
     throw new DomainNotAllowedError(normalizedEmail);
   }
 
+  const shouldBeAdmin = isAdminEmail(normalizedEmail);
+
   // Buscar usuario existente o crear uno nuevo
   const user = await prisma.user.upsert({
     where: { email: normalizedEmail },
-    update: {},
+    update: shouldBeAdmin ? { role: Role.admin } : {},
     create: {
       email: normalizedEmail,
       name: normalizedEmail.split("@")[0].replace(".", " "),
-      role: Role.user,
+      role: shouldBeAdmin ? Role.admin : Role.user,
     },
   });
 

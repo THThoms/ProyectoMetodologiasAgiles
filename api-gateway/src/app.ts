@@ -8,11 +8,16 @@ import { env } from "./config/env";
 export function createApp() {
   const app = express();
 
-  // helmet con CSP relajada para no romper redirects de Microsoft
+  // helmet con CSP relajada para no romper redirects de Microsoft.
+  // crossOriginOpenerPolicy se DESACTIVA porque el flujo SSO usa window.opener
+  // (popup -> postMessage al main window). Con COOP=same-origin el browser
+  // corta opener al cruzar a localhost:8080 y el popup nunca puede notificar.
   app.use(
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: false,
+      crossOriginResourcePolicy: false,
     })
   );
 
@@ -57,6 +62,17 @@ export function createApp() {
 
   app.use(
     "/api/auth",
+    createProxyMiddleware({
+      ...baseProxyOpts,
+      target: env.authServiceUrl,
+      pathRewrite: { "^": "/auth" },
+    })
+  );
+
+  // Proxy directo /auth/* -> auth-service (necesario para que el redirect URI
+  // registrado en Azure AD apunte a http://localhost:8080/auth/callback).
+  app.use(
+    "/auth",
     createProxyMiddleware({
       ...baseProxyOpts,
       target: env.authServiceUrl,

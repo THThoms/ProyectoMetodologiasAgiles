@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(findstr -i env)",
+      "Bash(npx prisma *)",
+      "Bash(docker compose *)"
+    ]
+  }
+}

@@ -7,7 +7,13 @@ import authRoutes from "./routes/authRoutes";
 export function createApp() {
   const app = express();
 
-  app.use(helmet());
+  // COOP off: el popup SSO necesita window.opener para postMessage al main window.
+  app.use(
+    helmet({
+      crossOriginOpenerPolicy: false,
+      crossOriginResourcePolicy: false,
+    })
+  );
   app.use(cors());
   app.use(express.json());
   app.use(morgan("combined"));

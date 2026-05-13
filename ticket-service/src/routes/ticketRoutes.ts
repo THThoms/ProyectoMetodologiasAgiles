@@ -128,11 +128,46 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
-// GET /tickets -> Tickets del usuario autenticado (orden desc por fecha)
+// Mapea rol de técnico al nivel de ticket que le corresponde.
+// tech_n1 -> N1, tech_n2 -> N2, tech_n3 -> N3, tech_n4 -> N4
+// ---------------------------------------------------------------------------
+function techRoleToLevel(role: string): Level | null {
+  const map: Record<string, Level> = {
+    tech_n1: "N1",
+    tech_n2: "N2",
+    tech_n3: "N3",
+    tech_n4: "N4",
+  };
+  return map[role] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// GET /tickets -> Tickets según rol:
+//   - admin           -> TODOS los tickets
+//   - tech_n*         -> solo tickets de su nivel (tech_n1 ve N1, etc.)
+//   - user            -> solo sus propios tickets
 // ---------------------------------------------------------------------------
 router.get("/", verifyJwt, async (req: Request, res: Response) => {
+  const role = req.user!.role;
+
+  let where: Prisma.TicketWhereInput = {};
+
+  if (role === "admin") {
+    // Admin ve todo
+    where = {};
+  } else if (role.startsWith("tech_")) {
+    // Técnico ve solo tickets de su nivel
+    const level = techRoleToLevel(role);
+    if (level) {
+      where = { levelAssigned: level };
+    }
+  } else {
+    // Usuario normal ve solo sus propios tickets
+    where = { userId: req.user!.userId };
+  }
+
   const tickets = await prisma.ticket.findMany({
-    where: { userId: req.user!.userId },
+    where,
     orderBy: { createdAt: "desc" },
     include: { attachments: true },
   });

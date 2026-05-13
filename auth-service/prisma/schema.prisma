@@ -27,7 +27,7 @@ enum Role {
 
 // -----------------------------------------------------------------------------
 // users - Espejo local del usuario autenticado vía Microsoft Azure AD o local.
-// `ms_oid` (object id de Azure) garantiza unicidad incluso si el email cambia.
+// `microsoft_id` (object id de Azure AD) garantiza unicidad incluso si el email cambia.
 // `password_hash` almacena la contraseña hasheada para login local.
 // -----------------------------------------------------------------------------
 model User {
@@ -35,7 +35,7 @@ model User {
   email         String    @unique
   name          String
   role          Role      @default(user)
-  msOid         String?   @unique @map("ms_oid")
+  microsoftId   String?   @unique @map("ms_oid")
   passwordHash  String?   @map("password_hash")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
