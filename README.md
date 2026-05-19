@@ -61,7 +61,7 @@ Al finalizar deberías ver:
 | Healthcheck gateway | http://localhost:8080/health |
 | Postgres (interno) | accesible solo desde la red Docker |
 
-> Las migraciones (`prisma migrate deploy`) y los seeds se ejecutan automáticamente en el arranque de cada microservicio.
+> Los esquemas Prisma se sincronizan con `prisma db push` y los seeds aplicables se ejecutan automáticamente en el arranque de cada microservicio.
 
 ---
 
@@ -202,7 +202,7 @@ servicedesk/
 - [x] HU-02: API Gateway con http-proxy-middleware. Solo el gateway expone puerto al host. CORS y healthchecks listos.
 - [x] HU-03: CRUD del catálogo, solo admin escribe, soft delete, seed con los 6 servicios.
 - [x] HU-04: Creación de ticket con multipart (≤5 imágenes JPG/PNG, ≤5MB c/u), número auto `TK-YYYYMMDD-NNN`, consulta a catalog-service para nivel.
-- [x] HU-05: 3 schemas Prisma aislados, migraciones idempotentes vía `prisma migrate deploy` al arrancar.
+- [x] HU-05: 3 schemas Prisma aislados, sincronizados vía `prisma db push` al arrancar.
 - [x] Frontend con paleta UTA: `/login`, `/auth/callback`, `/tickets/nuevo`, `/admin/catalogo`.
 - [x] Un solo comando `docker compose up --build` levanta todo.
 - [x] Todos los endpoints (excepto `/auth/microsoft*`, `/auth/dev-login`, `/auth/config`, `/health`, `GET /services`) validan JWT.
