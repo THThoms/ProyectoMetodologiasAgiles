@@ -31,4 +31,4 @@ RUN npx prisma generate
 COPY --from=builder /app/dist ./dist
 
 EXPOSE 3001
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && npx prisma db seed && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma db push && npx prisma db seed && node dist/index.js"]

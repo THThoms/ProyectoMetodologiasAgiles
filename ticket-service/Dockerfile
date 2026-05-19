@@ -28,4 +28,4 @@ COPY --from=builder /app/dist ./dist
 RUN mkdir -p /app/uploads && chown -R node:node /app/uploads
 
 EXPOSE 3003
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma db push && node dist/index.js"]
