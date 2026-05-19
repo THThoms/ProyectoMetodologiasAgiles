@@ -131,6 +131,7 @@ services:
       DATABASE_URL: postgresql://${TICKET_DB_USER}:${TICKET_DB_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${TICKET_DB_NAME}?schema=public
       JWT_SECRET: ${JWT_SECRET}
       CATALOG_SERVICE_URL: ${CATALOG_SERVICE_URL}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL}
     volumes:
       - ticket-uploads:/app/uploads
     networks:

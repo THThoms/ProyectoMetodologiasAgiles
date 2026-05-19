@@ -1,24 +1,38 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../db/client";
-import { Level, Prisma } from "@prisma/client";
+import { Level, Prisma, ResponsibleArea } from "@prisma/client";
 import { verifyJwt, requireRole } from "../middleware/verifyJwt";
 
 const router = Router();
 
 const levelEnum = z.nativeEnum(Level);
 
+// HU-06: la regla de enrutamiento es configurable por servicio.
+// Si no se especifican los campos de prioridad, se usa solo `levelEntry`.
+const routingRuleSchema = z.object({
+  priorityHigh: levelEnum.nullable().optional(),
+  priorityCritical: levelEnum.nullable().optional(),
+  isCritical: z.boolean().optional(),
+});
+
+const areaEnum = z.nativeEnum(ResponsibleArea);
+
 const createSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(500).optional(),
   levelEntry: levelEnum,
+  responsibleArea: areaEnum.optional(),
+  routingRule: routingRuleSchema.optional(),
 });
 
 const updateSchema = z.object({
   name: z.string().min(1).max(120).optional(),
   description: z.string().max(500).nullable().optional(),
   levelEntry: levelEnum.optional(),
+  responsibleArea: areaEnum.optional(),
   isActive: z.boolean().optional(),
+  routingRule: routingRuleSchema.optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -37,7 +51,8 @@ router.get("/", async (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /services/:id -> Detalle. Usado por ticket-service para obtener level_entry.
+// GET /services/:id -> Detalle. Usado por ticket-service para obtener la regla
+// de enrutamiento completa del servicio.
 // ---------------------------------------------------------------------------
 router.get("/:id", async (req: Request, res: Response) => {
   const service = await prisma.service.findUnique({
@@ -56,11 +71,19 @@ router.post("/", verifyJwt, requireRole("admin"), async (req: Request, res: Resp
   if (!parsed.success) {
     return res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
   }
+  const { routingRule, ...serviceData } = parsed.data;
   try {
     const service = await prisma.service.create({
       data: {
-        ...parsed.data,
-        routingRule: { create: { levelEntry: parsed.data.levelEntry } },
+        ...serviceData,
+        routingRule: {
+          create: {
+            levelEntry: serviceData.levelEntry,
+            priorityHigh: routingRule?.priorityHigh ?? null,
+            priorityCritical: routingRule?.priorityCritical ?? null,
+            isCritical: routingRule?.isCritical ?? false,
+          },
+        },
       },
       include: { routingRule: true },
     });
@@ -81,10 +104,19 @@ router.patch("/:id", verifyJwt, requireRole("admin"), async (req: Request, res: 
   if (!parsed.success) {
     return res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
   }
+  const { routingRule, ...serviceFields } = parsed.data;
   try {
-    const data: Prisma.ServiceUpdateInput = { ...parsed.data };
-    if (parsed.data.levelEntry) {
-      data.routingRule = { update: { levelEntry: parsed.data.levelEntry } };
+    const data: Prisma.ServiceUpdateInput = { ...serviceFields };
+    const needRuleUpdate = serviceFields.levelEntry !== undefined || routingRule !== undefined;
+    if (needRuleUpdate) {
+      data.routingRule = {
+        update: {
+          ...(serviceFields.levelEntry !== undefined ? { levelEntry: serviceFields.levelEntry } : {}),
+          ...(routingRule?.priorityHigh !== undefined ? { priorityHigh: routingRule.priorityHigh } : {}),
+          ...(routingRule?.priorityCritical !== undefined ? { priorityCritical: routingRule.priorityCritical } : {}),
+          ...(routingRule?.isCritical !== undefined ? { isCritical: routingRule.isCritical } : {}),
+        },
+      };
     }
     const service = await prisma.service.update({
       where: { id: req.params.id },

@@ -89,12 +89,43 @@ export function createApp() {
     })
   );
 
+  // HU-10: Base de conocimiento. Vive en catalog-service (mismo origen lógico
+  // que los servicios) bajo el path /knowledge.
+  app.use(
+    "/api/knowledge",
+    createProxyMiddleware({
+      ...baseProxyOpts,
+      target: env.catalogServiceUrl,
+      pathRewrite: { "^": "/knowledge" },
+    })
+  );
+
   app.use(
     "/api/tickets",
     createProxyMiddleware({
       ...baseProxyOpts,
       target: env.ticketServiceUrl,
       pathRewrite: { "^": "/tickets" },
+    })
+  );
+
+  // HU-06: Motor de enrutamiento. Vive en ticket-service.
+  app.use(
+    "/api/routing",
+    createProxyMiddleware({
+      ...baseProxyOpts,
+      target: env.ticketServiceUrl,
+      pathRewrite: { "^": "/routing" },
+    })
+  );
+
+  // Sprint 2 (rev): endpoints administrativos (asignación manual, estadísticas).
+  app.use(
+    "/api/admin",
+    createProxyMiddleware({
+      ...baseProxyOpts,
+      target: env.ticketServiceUrl,
+      pathRewrite: { "^": "/admin" },
     })
   );
 

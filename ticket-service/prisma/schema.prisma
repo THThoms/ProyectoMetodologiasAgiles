@@ -15,11 +15,15 @@ datasource db {
 }
 
 // -----------------------------------------------------------------------------
-// Estados del ciclo de vida del ticket. Sprint 1 solo usa `abierto`.
+// Estados del ciclo de vida del ticket.
+// `abierto` se muestra como "Pendiente" en la UI (label, no rename).
+// `escalado` lo introducirá HU-08 en sus transiciones; HU-07 solo lo lista
+// para que el panel pueda filtrarlo si en el futuro existen tickets en él.
 // -----------------------------------------------------------------------------
 enum TicketStatus {
   abierto
   en_proceso
+  escalado
   resuelto
   cerrado
 }
@@ -33,28 +37,131 @@ enum Level {
   N4
 }
 
+// HU-06: prioridad del ticket. Si no se especifica al crear, se asume `media`.
+// El motor de enrutamiento sube el level cuando es `alta` o `critica`.
+enum Priority {
+  baja
+  media
+  alta
+  critica
+}
+
+// Sprint 2 (rev): área responsable del ticket. Espeja al enum de catalog-service.
+// Reemplaza el filtro por nivel N1-N4 como criterio principal de asignación.
+enum ResponsibleArea {
+  TECHNICIANS
+  TICS
+  GENERAL
+}
+
+// Sprint 2 (rev): estado de asignación independiente del status del ticket.
+// `unassigned` cuando todavía no entra a la bandeja (estado raro/transitorio).
+// `available`  cuando está en la bandeja esperando que un técnico lo tome.
+// `accepted`   cuando un técnico lo aceptó por sí mismo.
+// `assigned_by_admin` cuando lo asignó el admin manualmente.
+enum AssignmentStatus {
+  unassigned
+  available
+  accepted
+  assigned_by_admin
+}
+
 // -----------------------------------------------------------------------------
 // tickets - Cabecera del ticket. `number` es el identificador humano (TK-YYYYMMDD-NNN).
 // `level_assigned` se rellena al crear el ticket consultando catalog-service.
 // -----------------------------------------------------------------------------
 model Ticket {
-  id              String        @id @default(uuid()) @db.Uuid
-  number          String        @unique
-  userId          String        @map("user_id") @db.Uuid     // FK lógica -> auth_db.users.id
-  serviceId       String        @map("service_id") @db.Uuid  // FK lógica -> catalog_db.services.id
-  detail          String        @db.Text
-  location        String?       @db.VarChar(255)   // Ubicación física (laboratorio, aula, edificio) — opcional
-  status          TicketStatus  @default(abierto)
-  levelAssigned   Level         @map("level_assigned")
-  createdAt       DateTime      @default(now()) @map("created_at")
-  updatedAt       DateTime      @updatedAt @map("updated_at")
+  id                     String           @id @default(uuid()) @db.Uuid
+  number                 String           @unique
+  userId                 String           @map("user_id") @db.Uuid     // FK lógica -> auth_db.users.id
+  userName               String?          @map("user_name")             // denormalizado para historial/listados
+  userEmail              String?          @map("user_email")            // denormalizado
+  serviceId              String           @map("service_id") @db.Uuid  // FK lógica -> catalog_db.services.id
+  serviceName            String?          @map("service_name")          // denormalizado
+  detail                 String           @db.Text
+  location               String?          @db.VarChar(255)
+  status                 TicketStatus     @default(abierto)
+  priority               Priority         @default(media)
+  // Sprint 2 (rev) - asignación por categoría/área:
+  responsibleArea        ResponsibleArea  @default(GENERAL) @map("responsible_area")
+  assignmentStatus       AssignmentStatus @default(available) @map("assignment_status")
+  assignedTechnicianId   String?          @map("assigned_technician_id") @db.Uuid
+  assignedTechnicianName String?          @map("assigned_technician_name")
+  acceptedAt             DateTime?        @map("accepted_at")
+  // Legacy HU-06/07/08: levelAssigned se mantiene calculado, pero la nueva
+  // lógica ya no filtra por él. Queda como referencia histórica.
+  levelAssigned          Level            @map("level_assigned")
+  createdAt              DateTime         @default(now()) @map("created_at")
+  updatedAt              DateTime         @updatedAt @map("updated_at")
 
-  // Relación 1:N con los archivos adjuntos (1..5).
-  attachments     Attachment[]
+  attachments            Attachment[]
+  events                 TicketEvent[]
 
   @@map("tickets")
   @@index([userId])
   @@index([status])
+  @@index([createdAt])
+  @@index([responsibleArea])
+  @@index([assignmentStatus])
+  @@index([assignedTechnicianId])
+}
+
+// -----------------------------------------------------------------------------
+// HU-08 - Acciones registrables sobre un ticket. Extensible para HU-09 (historial).
+// -----------------------------------------------------------------------------
+enum EventAction {
+  CREATED
+  CATEGORIZED
+  AVAILABLE
+  ACCEPTED
+  ASSIGNED
+  CONTRIBUTED
+  STATUS_CHANGED
+  ESCALATED
+  REASSIGNED
+  COMMENTED
+  RESOLVED
+  CLOSED
+}
+
+// Sprint 2 (rev): visibilidad de un evento del historial.
+enum EventVisibility {
+  public
+  internal
+}
+
+// -----------------------------------------------------------------------------
+// HU-08 - Registro mínimo de eventos para auditoría / trazabilidad.
+// Diseñado para ser ampliado por HU-09 sin migraciones destructivas.
+// `performed_by_name` se denormaliza para que el historial siga siendo
+// legible si el usuario es renombrado o desactivado más adelante.
+// -----------------------------------------------------------------------------
+model TicketEvent {
+  id                   String           @id @default(uuid()) @db.Uuid
+  ticketId             String           @map("ticket_id") @db.Uuid
+  action               EventAction
+  title                String?
+  previousLevel        Level?           @map("previous_level")
+  newLevel             Level?           @map("new_level")
+  previousStatus       TicketStatus?    @map("previous_status")
+  newStatus            TicketStatus?    @map("new_status")
+  // Sprint 2 (rev): cambios de área y técnico para el escalamiento mejorado.
+  previousArea         ResponsibleArea? @map("previous_area")
+  newArea              ResponsibleArea? @map("new_area")
+  previousTechnicianId String?          @map("previous_technician_id") @db.Uuid
+  newTechnicianId      String?          @map("new_technician_id") @db.Uuid
+  reason               String?          @db.Text
+  workDone             String?          @db.Text @map("work_done")
+  description          String?          @db.Text
+  visibility           EventVisibility  @default(public)
+  performedBy          String           @map("performed_by") @db.Uuid
+  performedByName      String           @map("performed_by_name")
+  createdAt            DateTime         @default(now()) @map("created_at")
+
+  ticket               Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@map("ticket_events")
+  @@index([ticketId])
   @@index([createdAt])
 }
 

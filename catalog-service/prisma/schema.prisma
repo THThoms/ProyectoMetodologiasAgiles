@@ -24,38 +24,89 @@ enum Level {
 }
 
 // -----------------------------------------------------------------------------
+// Sprint 2 (rev): área responsable de atender el servicio/categoría.
+// Reemplaza el filtro por nivel N1-N4 como criterio principal de asignación.
+// TECHNICIANS: hardware, redes, equipos, impresoras, WiFi.
+// TICS:        plataformas institucionales, sistema académico, accesos, MOODLE, SGA.
+// GENERAL:     cualquier técnico vigente puede tomarlo.
+// -----------------------------------------------------------------------------
+enum ResponsibleArea {
+  TECHNICIANS
+  TICS
+  GENERAL
+}
+
+// -----------------------------------------------------------------------------
 // services - Catálogo público consumido por el formulario de creación de tickets.
 // `is_active = false` equivale a soft delete: deja de aparecer en el combobox
 // pero conserva el historial de tickets ya creados.
 // -----------------------------------------------------------------------------
 model Service {
-  id           String         @id @default(uuid()) @db.Uuid
-  name         String         @unique
-  description  String?
-  levelEntry   Level          @map("level_entry")
-  isActive     Boolean        @default(true) @map("is_active")
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
+  id              String              @id @default(uuid()) @db.Uuid
+  name            String              @unique
+  description     String?
+  levelEntry      Level               @map("level_entry")
+  // Sprint 2 (rev): área responsable. Determina qué técnicos pueden tomar el ticket.
+  responsibleArea ResponsibleArea     @default(TECHNICIANS) @map("responsible_area")
+  isActive        Boolean             @default(true) @map("is_active")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
 
   // Relación 1:1 con la regla de enrutamiento. La separamos en una tabla
   // aparte porque podría evolucionar (ej. enrutamiento por horario / carga).
-  routingRule  RoutingRule?
+  routingRule     RoutingRule?
+
+  // HU-10: artículos de la base de conocimiento asociados a este servicio.
+  knowledgeArticles KnowledgeArticle[]
 
   @@map("services")
   @@index([isActive])
 }
 
 // -----------------------------------------------------------------------------
-// routing_rules - Por ahora la regla es trivial (mismo level que el service),
-// pero el modelo independiente nos deja añadir lógica sin tocar `services`.
+// routing_rules - Motor de enrutamiento configurable (HU-06).
+// `level_entry`        nivel por defecto cuando no hay prioridad o es baja/media.
+// `priority_high`      nivel a usar si el ticket tiene prioridad alta (opcional).
+// `priority_critical`  nivel a usar si el ticket tiene prioridad crítica (opcional).
+// `is_critical`        servicio marcado como crítico: prioridad alta o crítica
+//                      fuerza escalamiento al mayor nivel configurado.
 // -----------------------------------------------------------------------------
 model RoutingRule {
-  id          String   @id @default(uuid()) @db.Uuid
-  serviceId   String   @unique @map("service_id") @db.Uuid
-  levelEntry  Level    @map("level_entry")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id                String   @id @default(uuid()) @db.Uuid
+  serviceId         String   @unique @map("service_id") @db.Uuid
+  levelEntry        Level    @map("level_entry")
+  priorityHigh      Level?   @map("priority_high")
+  priorityCritical  Level?   @map("priority_critical")
+  isCritical        Boolean  @default(false) @map("is_critical")
+  updatedAt         DateTime @updatedAt @map("updated_at")
 
-  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  service           Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   @@map("routing_rules")
+}
+
+// -----------------------------------------------------------------------------
+// HU-10 - Base de conocimiento institucional.
+// Artículos consultables por palabra clave. `keywords` se guarda en lowercase
+// para soportar búsqueda case-insensitive sin lógica adicional. `createdByUserId`
+// es FK lógica al auth_db.users.id (no usamos FK Prisma entre microservicios).
+// -----------------------------------------------------------------------------
+model KnowledgeArticle {
+  id                 String   @id @default(uuid()) @db.Uuid
+  title              String
+  problemDescription String   @db.Text @map("problem_description")
+  solution           String   @db.Text
+  keywords           String[] @default([])
+  serviceId          String?  @map("service_id") @db.Uuid
+  createdByUserId    String?  @map("created_by_user_id") @db.Uuid
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  service            Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@map("knowledge_articles")
+  @@index([isActive])
+  @@index([serviceId])
+  @@index([updatedAt])
 }

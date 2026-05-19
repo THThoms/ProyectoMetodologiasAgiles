@@ -279,4 +279,36 @@ router.post("/verify", verifyJwt, (req: Request, res: Response) => {
   return res.json({ valid: true, user: req.user });
 });
 
+// ---------------------------------------------------------------------------
+// POST /auth/users/lookup -> Resolución masiva de usuarios por id.
+// HU-07: ticket-service lo usa para enriquecer el panel técnico con nombre y
+// email del solicitante (la integridad referencial entre microservicios es
+// lógica vía userId, no FK).
+// Body: { ids: string[] }   máx. 200 ids por llamada.
+// Solo personal autorizado (admin / tech_*) puede invocarlo: protege PII.
+// ---------------------------------------------------------------------------
+const STAFF_ROLES = new Set(["admin", "tech_n1", "tech_n2", "tech_n3", "tech_n4"]);
+
+router.post("/users/lookup", verifyJwt, async (req: Request, res: Response) => {
+  const role = req.user?.role ?? "";
+  if (!STAFF_ROLES.has(role)) {
+    return res.status(403).json({ error: "No tienes permisos para consultar usuarios" });
+  }
+  const rawIds: unknown = req.body?.ids;
+  if (!Array.isArray(rawIds) || rawIds.length === 0) {
+    return res.json({ users: [] });
+  }
+  if (rawIds.length > 200) {
+    return res.status(400).json({ error: "Máximo 200 ids por llamada" });
+  }
+  const stringIds = rawIds.filter((x): x is string => typeof x === "string");
+  const uniqueIds: string[] = Array.from(new Set<string>(stringIds));
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: uniqueIds } },
+    select: { id: true, email: true, name: true, role: true },
+  });
+  return res.json({ users });
+});
+
 export default router;

@@ -4,6 +4,9 @@ import helmet from "helmet";
 import morgan from "morgan";
 import path from "path";
 import ticketRoutes from "./routes/ticketRoutes";
+import routingRoutes from "./routes/routingRoutes";
+import assignmentRoutes from "./routes/assignmentRoutes";
+import adminRoutes from "./routes/adminRoutes";
 import { env } from "./config/env";
 import { verifyJwt } from "./middleware/verifyJwt";
 
@@ -23,7 +26,13 @@ export function createApp() {
     res.json({ status: "ok", service: "ticket-service" });
   });
 
+  // Sprint 2 (rev): los routers específicos (my/available/accept/accepted/escalate v2)
+  // se montan ANTES del router genérico de tickets para que sus paths tengan
+  // prioridad sobre `/:id`.
+  app.use("/tickets", assignmentRoutes);
   app.use("/tickets", ticketRoutes);
+  app.use("/routing", routingRoutes);
+  app.use("/admin", adminRoutes);
 
   // Servir archivos adjuntos. Requiere JWT para no exponer imágenes públicamente.
   app.use(
