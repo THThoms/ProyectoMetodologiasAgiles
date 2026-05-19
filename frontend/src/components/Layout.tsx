@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { api } from "../lib/api";
-import { clearToken, getCurrentUser } from "../lib/auth";
+import { clearToken, getCurrentUser, isStaffRole } from "../lib/auth";
 
 interface LayoutProps {
   children: ReactNode;
@@ -64,23 +64,69 @@ export function Layout({ children, showSubnav = true }: LayoutProps) {
             <Link
               to="/tickets/nuevo"
               className={`px-4 py-2.5 text-sm font-medium transition ${
-                isActive("/tickets")
+                isActive("/tickets/nuevo")
                   ? "bg-uta-900"
                   : "hover:bg-uta-900/60"
               }`}
             >
               Crear ticket
             </Link>
-            {user.role === "admin" && (
+            <Link
+              to="/mis-tickets"
+              className={`px-4 py-2.5 text-sm font-medium transition ${
+                isActive("/mis-tickets")
+                  ? "bg-uta-900"
+                  : "hover:bg-uta-900/60"
+              }`}
+            >
+              Mis Tickets
+            </Link>
+            {isStaffRole(user.role) && (
               <Link
-                to="/admin/catalogo"
+                to="/panel"
                 className={`px-4 py-2.5 text-sm font-medium transition ${
-                  isActive("/admin")
+                  isActive("/panel")
                     ? "bg-uta-900"
                     : "hover:bg-uta-900/60"
                 }`}
               >
-                Admin · Catálogo
+                Panel Técnico
+              </Link>
+            )}
+            {isStaffRole(user.role) && (
+              <Link
+                to="/conocimiento"
+                className={`px-4 py-2.5 text-sm font-medium transition ${
+                  isActive("/conocimiento")
+                    ? "bg-uta-900"
+                    : "hover:bg-uta-900/60"
+                }`}
+              >
+                Conocimiento
+              </Link>
+            )}
+            {user.role === "admin" && (
+              <Link
+                to="/admin/stats"
+                className={`px-4 py-2.5 text-sm font-medium transition ${
+                  isActive("/admin/stats")
+                    ? "bg-uta-900"
+                    : "hover:bg-uta-900/60"
+                }`}
+              >
+                Estadísticas
+              </Link>
+            )}
+            {user.role === "admin" && (
+              <Link
+                to="/admin/catalogo"
+                className={`px-4 py-2.5 text-sm font-medium transition ${
+                  isActive("/admin/catalogo")
+                    ? "bg-uta-900"
+                    : "hover:bg-uta-900/60"
+                }`}
+              >
+                Catálogo
               </Link>
             )}
           </div>

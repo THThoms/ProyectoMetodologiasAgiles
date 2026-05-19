@@ -63,9 +63,28 @@ export function isAuthenticated(): boolean {
   return getCurrentUser() !== null;
 }
 
-// Mapea rol -> ruta inicial. Para Sprint 1 todos van al formulario de ticket,
-// excepto admin que entra al panel de catálogo.
+// Sprint 2 (rev): admin va a estadísticas, técnicos al panel con bandejas,
+// usuarios normales a "Mis Tickets" (donde ven historial + crear).
 export function landingRouteFor(role: Role): string {
-  if (role === "admin") return "/admin/catalogo";
-  return "/tickets/nuevo";
+  if (role === "admin") return "/admin/stats";
+  if (role === "tech_n1" || role === "tech_n2" || role === "tech_n3" || role === "tech_n4") {
+    return "/panel";
+  }
+  return "/mis-tickets";
+}
+
+// Devuelve el nivel técnico (N1..N4) del rol; null si no aplica.
+export function levelOfRole(role: Role): "N1" | "N2" | "N3" | "N4" | null {
+  switch (role) {
+    case "tech_n1": return "N1";
+    case "tech_n2": return "N2";
+    case "tech_n3": return "N3";
+    case "tech_n4": return "N4";
+    default: return null;
+  }
+}
+
+// True si el rol puede acceder al Panel Técnico (HU-07).
+export function isStaffRole(role: Role): boolean {
+  return role === "admin" || levelOfRole(role) !== null;
 }
