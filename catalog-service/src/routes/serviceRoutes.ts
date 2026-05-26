@@ -18,10 +18,14 @@ const routingRuleSchema = z.object({
 
 const areaEnum = z.nativeEnum(ResponsibleArea);
 
+// Sprint 2 (rev): la UI de Catálogo ya no expone `levelEntry` (lógica legacy
+// N1-N4). El admin configura nombre + descripción + responsibleArea. El campo
+// `levelEntry` se mantiene NOT NULL en BD por compat con el seed y los tickets
+// ya existentes; si la petición no lo trae, defaulteamos a `N1` server-side.
 const createSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(500).optional(),
-  levelEntry: levelEnum,
+  levelEntry: levelEnum.optional(),
   responsibleArea: areaEnum.optional(),
   routingRule: routingRuleSchema.optional(),
 });
@@ -71,14 +75,18 @@ router.post("/", verifyJwt, requireRole("admin"), async (req: Request, res: Resp
   if (!parsed.success) {
     return res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
   }
-  const { routingRule, ...serviceData } = parsed.data;
+  const { routingRule, levelEntry, ...rest } = parsed.data;
+  // Sprint 2 (rev): si la UI nueva no manda `levelEntry`, defaulteamos a N1
+  // para mantener la columna NOT NULL del modelo y la regla de routing legacy.
+  const effectiveLevel = levelEntry ?? Level.N1;
   try {
     const service = await prisma.service.create({
       data: {
-        ...serviceData,
+        ...rest,
+        levelEntry: effectiveLevel,
         routingRule: {
           create: {
-            levelEntry: serviceData.levelEntry,
+            levelEntry: effectiveLevel,
             priorityHigh: routingRule?.priorityHigh ?? null,
             priorityCritical: routingRule?.priorityCritical ?? null,
             isCritical: routingRule?.isCritical ?? false,

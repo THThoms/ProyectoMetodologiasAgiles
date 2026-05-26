@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
 import { api, extractApiError } from "../lib/api";
 import TicketHistoryModal from "../components/TicketHistoryModal";
+import { getTechnicianDisplayLabel } from "../lib/technician";
 
 interface HistoryTicket {
   id: string;
@@ -64,6 +65,9 @@ const STATUSES: Array<HistoryTicket["status"]> = [
   "resuelto",
   "cerrado",
 ];
+
+// El label del técnico se delega a `getTechnicianDisplayLabel` para
+// garantizar formato uniforme en todos los selects del sistema.
 const PRIORITIES: Array<HistoryTicket["priority"]> = ["baja", "media", "alta", "critica"];
 const AREAS: Array<HistoryTicket["responsibleArea"]> = ["TECHNICIANS", "TICS", "GENERAL"];
 
@@ -204,7 +208,7 @@ export default function AdminHistorial() {
               <option value="">Todos</option>
               {technicians.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.name} ({t.role})
+                  {getTechnicianDisplayLabel(t, { includeEmail: false })}
                 </option>
               ))}
             </select>

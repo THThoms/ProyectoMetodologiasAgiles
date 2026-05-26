@@ -1,34 +1,72 @@
+// Sprint 2 (rev) - Panel de Catálogo para el administrador.
+// La lógica del Sprint 2 modificado abandonó la asignación por niveles N1-N4 a
+// favor de "responsibleArea" + técnicos vigentes + aceptación. Por eso esta
+// vista YA NO muestra ni pide nivel técnico al admin. El campo `levelEntry`
+// sigue existiendo en BD (columna NOT NULL del modelo legacy) y lo defaultea
+// el backend a N1 cuando no llega — no se expone en pantalla.
+
 import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { api, extractApiError } from "../lib/api";
 
-type Level = "N1" | "N2" | "N3" | "N4";
+type ResponsibleArea = "TECHNICIANS" | "TICS" | "GENERAL";
 
 interface CatalogService {
   id: string;
   name: string;
   description: string | null;
-  levelEntry: Level;
+  // levelEntry sigue viniendo del backend; lo mantenemos en el tipo para no
+  // romper otras respuestas, pero no se renderiza en la UI.
+  levelEntry?: string;
+  responsibleArea: ResponsibleArea;
   isActive: boolean;
   createdAt: string;
 }
 
-const LEVELS: Level[] = ["N1", "N2", "N3", "N4"];
+const AREA_LABEL: Record<ResponsibleArea, string> = {
+  TECHNICIANS: "Técnicos",
+  TICS: "TICs",
+  GENERAL: "General",
+};
 
-const emptyForm = { name: "", description: "", levelEntry: "N1" as Level };
+const AREA_BADGE: Record<ResponsibleArea, string> = {
+  TECHNICIANS: "bg-uta-100 text-uta-900",
+  TICS: "bg-sky-100 text-sky-800",
+  GENERAL: "bg-gray-200 text-gray-700",
+};
+
+interface CreateForm {
+  name: string;
+  description: string;
+  responsibleArea: ResponsibleArea;
+}
+
+interface EditForm {
+  name: string;
+  description: string;
+  responsibleArea: ResponsibleArea;
+}
+
+const emptyCreateForm: CreateForm = {
+  name: "",
+  description: "",
+  responsibleArea: "TECHNICIANS",
+};
 
 export default function AdminCatalogo() {
   const [services, setServices] = useState<CatalogService[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Form de creación
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState<CreateForm>(emptyCreateForm);
   const [creating, setCreating] = useState(false);
 
-  // Form de edición (inline)
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState(emptyForm);
+  const [editForm, setEditForm] = useState<EditForm>({
+    name: "",
+    description: "",
+    responsibleArea: "TECHNICIANS",
+  });
 
   async function load() {
     setLoading(true);
@@ -54,8 +92,14 @@ export default function AdminCatalogo() {
     setError(null);
     setCreating(true);
     try {
-      await api.post("/api/catalog/services", form);
-      setForm(emptyForm);
+      // Solo enviamos lo que el admin configura — el backend defaultea
+      // `levelEntry` a N1 si no llega (compat con la columna legacy).
+      await api.post("/api/catalog/services", {
+        name: form.name,
+        description: form.description || undefined,
+        responsibleArea: form.responsibleArea,
+      });
+      setForm(emptyCreateForm);
       await load();
     } catch (err) {
       setError(extractApiError(err));
@@ -69,14 +113,19 @@ export default function AdminCatalogo() {
     setEditForm({
       name: s.name,
       description: s.description ?? "",
-      levelEntry: s.levelEntry,
+      responsibleArea: s.responsibleArea,
     });
   }
 
   async function saveEdit(id: string) {
     setError(null);
     try {
-      await api.patch(`/api/catalog/services/${id}`, editForm);
+      // No mandamos levelEntry: conservamos el valor existente en BD intacto.
+      await api.patch(`/api/catalog/services/${id}`, {
+        name: editForm.name,
+        description: editForm.description || null,
+        responsibleArea: editForm.responsibleArea,
+      });
       setEditingId(null);
       await load();
     } catch (err) {
@@ -116,7 +165,10 @@ export default function AdminCatalogo() {
 
       {/* Formulario de creación */}
       <div className="card mb-6">
-        <h2 className="mb-4 text-lg font-bold text-uta-900">Nuevo servicio</h2>
+        <h2 className="mb-1 text-lg font-bold text-uta-900">Nuevo servicio / categoría</h2>
+        <p className="mb-4 text-xs text-gray-500">
+          La asignación de tickets ahora depende del <strong>área responsable</strong>.
+        </p>
         <form onSubmit={createService} className="grid gap-4 sm:grid-cols-12">
           <div className="sm:col-span-4">
             <label className="label" htmlFor="new-name">Nombre</label>
@@ -126,26 +178,32 @@ export default function AdminCatalogo() {
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               required
+              placeholder="Ej: Laboratorios de cómputo"
             />
           </div>
-          <div className="sm:col-span-5">
+          <div className="sm:col-span-4">
             <label className="label" htmlFor="new-desc">Descripción</label>
             <input
               id="new-desc"
               className="input"
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
+              placeholder="Incidencias relacionadas con equipos de laboratorio"
             />
           </div>
-          <div className="sm:col-span-2">
-            <label className="label" htmlFor="new-level">Nivel</label>
+          <div className="sm:col-span-3">
+            <label className="label" htmlFor="new-area">Área responsable</label>
             <select
-              id="new-level"
+              id="new-area"
               className="input"
-              value={form.levelEntry}
-              onChange={(e) => setForm({ ...form, levelEntry: e.target.value as Level })}
+              value={form.responsibleArea}
+              onChange={(e) =>
+                setForm({ ...form, responsibleArea: e.target.value as ResponsibleArea })
+              }
             >
-              {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+              <option value="TECHNICIANS">{AREA_LABEL.TECHNICIANS}</option>
+              <option value="TICS">{AREA_LABEL.TICS}</option>
+              <option value="GENERAL">{AREA_LABEL.GENERAL}</option>
             </select>
           </div>
           <div className="sm:col-span-1 flex items-end">
@@ -169,7 +227,7 @@ export default function AdminCatalogo() {
             <tr>
               <th className="px-4 py-3">Nombre</th>
               <th className="px-4 py-3">Descripción</th>
-              <th className="px-4 py-3 text-center">Nivel</th>
+              <th className="px-4 py-3 text-center">Área responsable</th>
               <th className="px-4 py-3 text-center">Estado</th>
               <th className="px-4 py-3 text-right">Acciones</th>
             </tr>
@@ -202,7 +260,9 @@ export default function AdminCatalogo() {
                       <input
                         className="input"
                         value={editForm.description}
-                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, description: e.target.value })
+                        }
                       />
                     ) : (
                       s.description ?? <span className="text-gray-400">—</span>
@@ -212,13 +272,26 @@ export default function AdminCatalogo() {
                     {editing ? (
                       <select
                         className="input"
-                        value={editForm.levelEntry}
-                        onChange={(e) => setEditForm({ ...editForm, levelEntry: e.target.value as Level })}
+                        value={editForm.responsibleArea}
+                        onChange={(e) =>
+                          setEditForm({
+                            ...editForm,
+                            responsibleArea: e.target.value as ResponsibleArea,
+                          })
+                        }
                       >
-                        {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                        <option value="TECHNICIANS">{AREA_LABEL.TECHNICIANS}</option>
+                        <option value="TICS">{AREA_LABEL.TICS}</option>
+                        <option value="GENERAL">{AREA_LABEL.GENERAL}</option>
                       </select>
                     ) : (
-                      <span className="badge-level">{s.levelEntry}</span>
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          AREA_BADGE[s.responsibleArea] ?? "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {AREA_LABEL[s.responsibleArea] ?? s.responsibleArea}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
@@ -233,24 +306,39 @@ export default function AdminCatalogo() {
                   <td className="px-4 py-3 text-right">
                     {editing ? (
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => saveEdit(s.id)} className="btn-primary px-3 py-1 text-xs">
+                        <button
+                          onClick={() => saveEdit(s.id)}
+                          className="btn-primary px-3 py-1 text-xs"
+                        >
                           Guardar
                         </button>
-                        <button onClick={() => setEditingId(null)} className="btn-secondary px-3 py-1 text-xs">
+                        <button
+                          onClick={() => setEditingId(null)}
+                          className="btn-secondary px-3 py-1 text-xs"
+                        >
                           Cancelar
                         </button>
                       </div>
                     ) : (
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => startEdit(s)} className="btn-secondary px-3 py-1 text-xs">
+                        <button
+                          onClick={() => startEdit(s)}
+                          className="btn-secondary px-3 py-1 text-xs"
+                        >
                           Editar
                         </button>
                         {s.isActive ? (
-                          <button onClick={() => softDelete(s.id)} className="btn-secondary px-3 py-1 text-xs">
+                          <button
+                            onClick={() => softDelete(s.id)}
+                            className="btn-secondary px-3 py-1 text-xs"
+                          >
                             Desactivar
                           </button>
                         ) : (
-                          <button onClick={() => reactivate(s.id)} className="btn-secondary px-3 py-1 text-xs">
+                          <button
+                            onClick={() => reactivate(s.id)}
+                            className="btn-secondary px-3 py-1 text-xs"
+                          >
                             Reactivar
                           </button>
                         )}

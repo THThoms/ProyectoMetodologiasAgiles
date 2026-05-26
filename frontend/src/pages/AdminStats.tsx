@@ -10,6 +10,7 @@ import { api, extractApiError } from "../lib/api";
 import DonutChart, { DonutSlice } from "../components/charts/DonutChart";
 import BarChart from "../components/charts/BarChart";
 import LineChart from "../components/charts/LineChart";
+import { getTechnicianAreaLabel, getTechnicianDisplayLabel } from "../lib/technician";
 
 interface StatsResponse {
   totals: {
@@ -385,11 +386,12 @@ function AssignModal({
     const list = technicians.filter((t) => t.areas.includes(ticket.responsibleArea));
     const q = search.trim().toLowerCase();
     if (!q) return list;
+    // Buscamos por email y por área visible (no por el rol interno ni por el
+    // nombre crudo del seed, para que coincida con lo que el admin ve).
     return list.filter(
       (t) =>
-        t.name.toLowerCase().includes(q) ||
         t.email.toLowerCase().includes(q) ||
-        t.role.toLowerCase().includes(q)
+        getTechnicianAreaLabel(t).toLowerCase().includes(q)
     );
   }, [technicians, ticket.responsibleArea, search]);
 
@@ -435,7 +437,7 @@ function AssignModal({
               <input
                 type="text"
                 className="input"
-                placeholder="Nombre, correo o rol…"
+                placeholder="Correo o área…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 disabled={submitting}
@@ -459,7 +461,7 @@ function AssignModal({
                 )}
                 {eligible.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.name} · {t.email} · {t.role}
+                    {getTechnicianDisplayLabel(t)}
                   </option>
                 ))}
               </select>
