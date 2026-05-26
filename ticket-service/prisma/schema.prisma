@@ -88,6 +88,14 @@ model Ticket {
   assignedTechnicianId   String?          @map("assigned_technician_id") @db.Uuid
   assignedTechnicianName String?          @map("assigned_technician_name")
   acceptedAt             DateTime?        @map("accepted_at")
+  // Sprint 2 (rev): cierre del ticket con vínculo a la base de conocimiento.
+  // `knowledgeArticleId` es FK lógica a catalog_db.knowledge_articles.id (sin FK
+  // física entre microservicios). Todos opcionales para no romper datos previos.
+  resolvedAt             DateTime?        @map("resolved_at")
+  resolvedById           String?          @map("resolved_by_id") @db.Uuid
+  resolvedByName         String?          @map("resolved_by_name")
+  knowledgeArticleId     String?          @map("knowledge_article_id") @db.Uuid
+  resolutionSummary      String?          @db.Text @map("resolution_summary")
   // Legacy HU-06/07/08: levelAssigned se mantiene calculado, pero la nueva
   // lógica ya no filtra por él. Queda como referencia histórica.
   levelAssigned          Level            @map("level_assigned")

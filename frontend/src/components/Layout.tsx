@@ -95,6 +95,18 @@ export function Layout({ children, showSubnav = true }: LayoutProps) {
             )}
             {isStaffRole(user.role) && (
               <Link
+                to="/mis-aceptados"
+                className={`px-4 py-2.5 text-sm font-medium transition ${
+                  isActive("/mis-aceptados")
+                    ? "bg-uta-900"
+                    : "hover:bg-uta-900/60"
+                }`}
+              >
+                Mis Aceptados
+              </Link>
+            )}
+            {isStaffRole(user.role) && (
+              <Link
                 to="/conocimiento"
                 className={`px-4 py-2.5 text-sm font-medium transition ${
                   isActive("/conocimiento")
@@ -115,6 +127,18 @@ export function Layout({ children, showSubnav = true }: LayoutProps) {
                 }`}
               >
                 Estadísticas
+              </Link>
+            )}
+            {user.role === "admin" && (
+              <Link
+                to="/admin/historial"
+                className={`px-4 py-2.5 text-sm font-medium transition ${
+                  isActive("/admin/historial")
+                    ? "bg-uta-900"
+                    : "hover:bg-uta-900/60"
+                }`}
+              >
+                Historial
               </Link>
             )}
             {user.role === "admin" && (

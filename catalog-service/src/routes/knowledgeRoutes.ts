@@ -1,9 +1,11 @@
 // HU-10 - Endpoints de la base de conocimiento institucional.
 //
-//   GET /knowledge/search?q=<term>[&serviceId=<uuid>][&page=N][&limit=N]
-//     - Solo admin o tech_n*.
-//     - q obligatorio (>=2 chars trim).
-//     - Busca case-insensitive en title / problemDescription / solution / keywords.
+//   GET  /knowledge/search?q=<term>[&serviceId=<uuid>][&page=N][&limit=N]
+//   GET  /knowledge/:id        -> Detalle. Usado por ticket-service para validar
+//                                 que `knowledgeArticleId` existe al resolver.
+//   POST /knowledge            -> Crear artículo (admin/tech_*). Permite que el
+//                                 técnico registre una solución nueva al cerrar
+//                                 un ticket (Sprint 2 rev).
 //
 import { Router, Request, Response } from "express";
 import { z } from "zod";
@@ -90,6 +92,112 @@ router.get(
         updatedAt: a.updatedAt,
         createdAt: a.createdAt,
       })),
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// GET /knowledge/:id  -> Detalle de un artículo.
+// Sprint 2 (rev): ticket-service lo consume para verificar que la solución que
+// referencia un ticket resuelto existe realmente en catalog_db.
+// ---------------------------------------------------------------------------
+const uuidParam = z.string().uuid({ message: "id debe ser un UUID válido" });
+
+router.get(
+  "/:id",
+  verifyJwt,
+  requireRole(...STAFF_ROLES),
+  async (req: Request, res: Response) => {
+    const parsedId = uuidParam.safeParse(req.params.id);
+    if (!parsedId.success) {
+      return res.status(400).json({ error: "id inválido" });
+    }
+    const article = await prisma.knowledgeArticle.findUnique({
+      where: { id: parsedId.data },
+      include: { service: { select: { id: true, name: true } } },
+    });
+    if (!article || !article.isActive) {
+      return res.status(404).json({ error: "Artículo no encontrado" });
+    }
+    return res.json({
+      article: {
+        id: article.id,
+        title: article.title,
+        problemDescription: article.problemDescription,
+        solution: article.solution,
+        keywords: article.keywords,
+        service: article.service ? { id: article.service.id, name: article.service.name } : null,
+        createdAt: article.createdAt,
+        updatedAt: article.updatedAt,
+      },
+    });
+  }
+);
+
+// ---------------------------------------------------------------------------
+// POST /knowledge  -> Crear artículo de la base de conocimiento.
+// Sprint 2 (rev): habilitado para admin y técnicos. Lo usa el flujo de
+// resolución de ticket cuando el técnico elige "Crear nueva solución".
+//   body: { title, problemDescription, solution, keywords[>=1], serviceId? }
+// ---------------------------------------------------------------------------
+const createSchema = z.object({
+  title: z.string().trim().min(3, "El título debe tener al menos 3 caracteres").max(200),
+  problemDescription: z
+    .string()
+    .trim()
+    .min(10, "La descripción del problema debe tener al menos 10 caracteres"),
+  solution: z.string().trim().min(10, "La solución debe tener al menos 10 caracteres"),
+  keywords: z
+    .array(z.string().trim().min(1))
+    .min(1, "Debes proporcionar al menos una palabra clave")
+    .max(20),
+  serviceId: z.string().uuid().optional(),
+});
+
+router.post(
+  "/",
+  verifyJwt,
+  requireRole(...STAFF_ROLES),
+  async (req: Request, res: Response) => {
+    const parsed = createSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "Datos inválidos", details: parsed.error.issues });
+    }
+    const { title, problemDescription, solution, keywords, serviceId } = parsed.data;
+
+    // Si viene serviceId, validar que exista (FK física dentro de catalog_db).
+    if (serviceId) {
+      const service = await prisma.service.findUnique({ where: { id: serviceId } });
+      if (!service) {
+        return res.status(400).json({ error: "El servicio referenciado no existe" });
+      }
+    }
+
+    const article = await prisma.knowledgeArticle.create({
+      data: {
+        title,
+        problemDescription,
+        solution,
+        keywords: keywords.map((k) => k.toLowerCase()),
+        serviceId: serviceId ?? null,
+        createdByUserId: req.user!.userId,
+      },
+      include: { service: { select: { id: true, name: true } } },
+    });
+
+    return res.status(201).json({
+      article: {
+        id: article.id,
+        title: article.title,
+        problemDescription: article.problemDescription,
+        solution: article.solution,
+        keywords: article.keywords,
+        service: article.service ? { id: article.service.id, name: article.service.name } : null,
+        createdAt: article.createdAt,
+        updatedAt: article.updatedAt,
+      },
     });
   }
 );

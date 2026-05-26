@@ -241,22 +241,167 @@ describe("POST /tickets/:id/accept", () => {
 // GET /tickets/accepted
 // =============================================================================
 describe("GET /tickets/accepted", () => {
-  it("tech ve solo los tickets asignados a sí mismo", async () => {
+  it("tech ve solo los tickets asignados a sí mismo (excluye resueltos y cerrados)", async () => {
     (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
     const token = makeToken("tech_n1", TECH_ID);
     await request(app).get("/tickets/accepted").set("Authorization", `Bearer ${token}`);
     expect(prisma.ticket.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { assignedTechnicianId: TECH_ID } })
+      expect.objectContaining({
+        where: {
+          assignedTechnicianId: TECH_ID,
+          status: { notIn: ["resuelto", "cerrado"] },
+        },
+      })
     );
   });
 
-  it("admin ve todos los asignados", async () => {
+  it("admin ve todos los asignados activos por defecto", async () => {
     (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
     const token = makeToken("admin");
     await request(app).get("/tickets/accepted").set("Authorization", `Bearer ${token}`);
     expect(prisma.ticket.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { assignedTechnicianId: { not: null } } })
+      expect.objectContaining({
+        where: {
+          assignedTechnicianId: { not: null },
+          status: { notIn: ["resuelto", "cerrado"] },
+        },
+      })
     );
+  });
+
+  it("?includeResolved=true&includeClosed=true incluye todos", async () => {
+    (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
+    const token = makeToken("tech_n1", TECH_ID);
+    await request(app)
+      .get("/tickets/accepted?includeResolved=true&includeClosed=true")
+      .set("Authorization", `Bearer ${token}`);
+    expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { assignedTechnicianId: TECH_ID } })
+    );
+  });
+});
+
+// =============================================================================
+// GET /tickets/my-assigned
+// =============================================================================
+describe("GET /tickets/my-assigned", () => {
+  it("tech ve solo activos (excluye resuelto y cerrado por defecto)", async () => {
+    (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
+    const token = makeToken("tech_n1", TECH_ID);
+    const res = await request(app)
+      .get("/tickets/my-assigned")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          assignedTechnicianId: TECH_ID,
+          status: { notIn: ["resuelto", "cerrado"] },
+        },
+      })
+    );
+    expect(res.body.filters).toMatchObject({
+      technicianId: TECH_ID,
+      includeClosed: false,
+      history: false,
+    });
+  });
+
+  it("includeClosed=true incluye tickets cerrados (sigue excluyendo resueltos)", async () => {
+    (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
+    const token = makeToken("tech_n1", TECH_ID);
+    await request(app)
+      .get("/tickets/my-assigned?includeClosed=true")
+      .set("Authorization", `Bearer ${token}`);
+    expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { assignedTechnicianId: TECH_ID, status: { notIn: ["resuelto"] } },
+      })
+    );
+  });
+
+  it("history=true devuelve resueltos/cerrados del técnico", async () => {
+    (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
+    const token = makeToken("tech_n1", TECH_ID);
+    const res = await request(app)
+      .get("/tickets/my-assigned?history=true")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: { in: ["resuelto", "cerrado"] },
+          OR: [
+            { assignedTechnicianId: TECH_ID },
+            { resolvedById: TECH_ID },
+          ],
+        },
+      })
+    );
+    expect(res.body.filters).toMatchObject({ history: true });
+  });
+
+  it("admin sin technicianId ve los suyos propios", async () => {
+    (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
+    const ADMIN_ID = "99999999-9999-4999-8999-999999999999";
+    const token = makeToken("admin", ADMIN_ID);
+    await request(app)
+      .get("/tickets/my-assigned")
+      .set("Authorization", `Bearer ${token}`);
+    expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ assignedTechnicianId: ADMIN_ID }),
+      })
+    );
+  });
+
+  it("admin puede auditar tickets de otro técnico vía ?technicianId=...", async () => {
+    (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
+    const token = makeToken("admin");
+    await request(app)
+      .get(`/tickets/my-assigned?technicianId=${TECH_ID}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ assignedTechnicianId: TECH_ID }),
+      })
+    );
+  });
+
+  it("técnico NO puede usar ?technicianId para ver tickets ajenos (ignora el query)", async () => {
+    (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
+    const otroTecnico = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+    const token = makeToken("tech_n1", TECH_ID);
+    await request(app)
+      .get(`/tickets/my-assigned?technicianId=${otroTecnico}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(prisma.ticket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ assignedTechnicianId: TECH_ID }),
+      })
+    );
+  });
+
+  it("403 si usuario normal intenta consultar", async () => {
+    const token = makeToken("user");
+    const res = await request(app)
+      .get("/tickets/my-assigned")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(prisma.ticket.findMany).not.toHaveBeenCalled();
+  });
+
+  it("401 sin JWT", async () => {
+    const res = await request(app).get("/tickets/my-assigned");
+    expect(res.status).toBe(401);
+  });
+
+  it("400 si technicianId no es UUID", async () => {
+    const token = makeToken("admin");
+    const res = await request(app)
+      .get("/tickets/my-assigned?technicianId=not-a-uuid")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(400);
   });
 });
 

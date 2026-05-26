@@ -105,9 +105,11 @@ router.post(
     }
     const { serviceId, detail, location, priority } = parsed.data;
 
-    // HU-06: Resolver nivel técnico vía motor de enrutamiento.
-    // Sprint 2 (rev): además se persiste `responsibleArea` y `serviceName` para
-    // que el ticket sea autodescriptivo sin tener que llamar al catálogo después.
+    // Sprint 2 (rev): el flujo nuevo usa `responsibleArea`. El `levelAssigned`
+    // sobrevive como columna NOT NULL del modelo legacy. Si el servicio trae
+    // `routingRule`, calculamos el nivel como antes; si no, hacemos fallback
+    // a `service.levelEntry` o, como último recurso, a `N1`. Esto evita que
+    // un servicio nuevo creado sin regla legacy bloquee la creación.
     let level: Level;
     let serviceName: string;
     let responsibleArea: import("@prisma/client").ResponsibleArea = "GENERAL" as never;
@@ -118,7 +120,15 @@ router.post(
         cleanupFiles(files);
         return res.status(400).json({ error: "El servicio seleccionado está deshabilitado" });
       }
-      level = resolveLevel(service.routingRule, priority ?? null, serviceId);
+      if (service.routingRule) {
+        level = resolveLevel(service.routingRule, priority ?? null, serviceId);
+      } else {
+        const fallback = (service.levelEntry ?? "N1") as Level;
+        console.warn(
+          `[tickets] servicio ${serviceId} sin routingRule legacy; usando fallback ${fallback}`
+        );
+        level = fallback;
+      }
       serviceName = service.name;
       responsibleArea = (service.responsibleArea ?? "GENERAL") as never;
     } catch (err) {
@@ -127,6 +137,8 @@ router.post(
         return res.status(400).json({ error: err.message });
       }
       if (err instanceof NoRoutingRuleError) {
+        // Defensivo: resolveLevel también puede lanzar esto si la regla es null.
+        // Con el fallback de arriba no debería pasar, pero por compat lo manejamos.
         return res.status(400).json({ error: err.message });
       }
       if (err instanceof InvalidLevelError) {
@@ -619,8 +631,15 @@ router.get("/history/:id", verifyJwt, async (req: Request, res: Response) => {
       .json({ error: "No tienes permisos para ver el historial de este ticket" });
   }
 
+  // El solicitante nunca debe ver eventos `internal` (defensa en backend,
+  // independiente del filtro adicional que aplique el frontend).
+  const isRequesterOnly = !isAdmin && !isTech && ticket.userId === req.user!.userId;
+
   const events = await prisma.ticketEvent.findMany({
-    where: { ticketId: req.params.id },
+    where: {
+      ticketId: req.params.id,
+      ...(isRequesterOnly ? { visibility: "public" } : {}),
+    },
     orderBy: { createdAt: "asc" },
   });
 
@@ -643,7 +662,12 @@ router.get("/history/:id", verifyJwt, async (req: Request, res: Response) => {
       newStatus: e.newStatus,
       previousLevel: e.previousLevel,
       newLevel: e.newLevel,
+      previousArea: e.previousArea,
+      newArea: e.newArea,
       reason: e.reason,
+      workDone: e.workDone,
+      eventDescription: e.description,
+      visibility: e.visibility,
       performedBy: { id: e.performedBy, name: e.performedByName },
       createdAt: e.createdAt,
     })),

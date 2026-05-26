@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd ../ticket-service && npx prisma generate 2>&1 | tail -5)",
+      "Read(//c/Users/USER/Documents/cuarto semestre/Metodologias Ajiles/**)",
+      "Bash(curl -s -X POST http://localhost:8080/api/auth/login -H \"Content-Type: application/json\" -d '{\"correo\":\"docente@uta.edu.ec\",\"password\":\"docente123\"}')",
+      "Bash(python -c \"import sys,json; t=json.load\\(sys.stdin\\)['ticket']; print\\(f\\\\\"number={t['number']} priority={t['priority']} levelAssigned={t['levelAssigned']}\\\\\"\\)\")",
+      "Bash(bash /c/tmp/e2e-sprint2-rev.sh)"
+    ]
+  }
+}

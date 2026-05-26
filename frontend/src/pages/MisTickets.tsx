@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { api, extractApiError } from "../lib/api";
+import TicketHistoryModal from "../components/TicketHistoryModal";
 
 interface Ticket {
   id: string;
@@ -23,19 +24,6 @@ interface Ticket {
 interface MyResponse {
   tickets: Ticket[];
   total: number;
-}
-
-interface HistoryEvent {
-  id: string;
-  actionType: string;
-  description: string;
-  reason: string | null;
-  workDone?: string | null;
-  newArea?: string | null;
-  previousArea?: string | null;
-  performedBy: { id: string; name: string };
-  createdAt: string;
-  visibility?: "public" | "internal";
 }
 
 const STATUS_LABEL: Record<Ticket["status"], { label: string; classes: string }> = {
@@ -165,105 +153,17 @@ export default function MisTickets() {
         )}
 
         {historyTicket && (
-          <UserHistoryModal ticket={historyTicket} onClose={() => setHistoryTicket(null)} />
+          <TicketHistoryModal
+            ticket={{
+              id: historyTicket.id,
+              number: historyTicket.number,
+              serviceName: historyTicket.serviceName,
+            }}
+            audience="requester"
+            onClose={() => setHistoryTicket(null)}
+          />
         )}
       </div>
     </Layout>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Modal de historial — filtra eventos `internal` (el usuario solo ve los públicos).
-// ---------------------------------------------------------------------------
-function UserHistoryModal({ ticket, onClose }: { ticket: Ticket; onClose: () => void }) {
-  const [events, setEvents] = useState<HistoryEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<{ history: HistoryEvent[] }>(`/api/tickets/history/${ticket.id}`)
-      .then((r) => {
-        if (!cancelled) {
-          // El usuario solo debe ver eventos públicos.
-          setEvents((r.data.history ?? []).filter((e) => e.visibility !== "internal"));
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setError(extractApiError(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [ticket.id]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
-      <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl">
-        <div className="border-b border-gray-200 px-6 py-4">
-          <h2 className="text-lg font-bold text-uta-900">Historial del Ticket</h2>
-          <p className="mt-1 text-xs text-gray-600">
-            <span className="font-mono font-semibold">{ticket.number}</span> · {ticket.serviceName ?? "—"}
-          </p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {loading && <p className="text-center text-sm text-gray-500">Cargando…</p>}
-          {error && (
-            <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
-              {error}
-            </div>
-          )}
-          {!loading && !error && events.length === 0 && (
-            <p className="py-6 text-center text-sm text-gray-500">
-              No hay acciones registradas para este ticket.
-            </p>
-          )}
-          {!loading && !error && events.length > 0 && (
-            <ol className="relative space-y-4 border-l-2 border-gray-200 pl-6">
-              {events.map((e) => (
-                <li key={e.id} className="relative">
-                  <span className="absolute -left-[33px] flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-uta-600 text-[10px] font-bold text-white">●</span>
-                  <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="inline-flex rounded-full bg-uta-100 px-2 py-0.5 text-[11px] font-semibold text-uta-900">
-                        {e.actionType}
-                      </span>
-                      <span className="text-xs text-gray-500">{formatDate(e.createdAt)}</span>
-                    </div>
-                    <p className="text-sm text-gray-800">{e.description}</p>
-                    <p className="mt-1 text-xs text-gray-500">por <strong>{e.performedBy.name}</strong></p>
-                    {e.reason && (
-                      <p className="mt-2 rounded bg-gray-50 px-2 py-1 text-xs italic text-gray-700">
-                        Motivo: {e.reason}
-                      </p>
-                    )}
-                    {e.workDone && (
-                      <p className="mt-1 rounded bg-gray-50 px-2 py-1 text-xs italic text-gray-700">
-                        Trabajo previo: {e.workDone}
-                      </p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-
-        <div className="flex justify-end border-t border-gray-200 bg-gray-50 px-6 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded border border-gray-300 bg-white px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Cerrar
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

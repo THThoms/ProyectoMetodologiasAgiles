@@ -119,24 +119,44 @@ describe("POST /tickets", () => {
     );
   });
 
-  it("responde 400 si el servicio no tiene routingRule configurada", async () => {
+  // Sprint 2 (rev): si el servicio no trae routingRule legacy, ya no se rechaza
+  // la creación. El flujo nuevo se basa en `responsibleArea`; `levelAssigned`
+  // se rellena con `service.levelEntry` (o N1) como fallback de compat.
+  it("usa fallback de levelEntry si el servicio no tiene routingRule", async () => {
     (fetchService as jest.Mock).mockResolvedValue({
       id: SERVICE_ID,
       name: "Servicio sin regla",
       isActive: true,
-      levelEntry: "N1",
+      levelEntry: "N2",
+      responsibleArea: "TICS",
       routingRule: null,
     });
+    (generateTicketNumber as jest.Mock).mockResolvedValue("TK-FALLBACK-001");
+    mockTicketCreate.mockImplementation(async ({ data }) => ({
+      id: "55555555-5555-4555-8555-555555555555",
+      status: "abierto",
+      priority: data.priority ?? "media",
+      ...data,
+      attachments: [],
+    }));
 
     const token = makeToken("user");
     const res = await request(app)
       .post("/tickets")
       .set("Authorization", `Bearer ${token}`)
       .field("serviceId", SERVICE_ID)
-      .field("detail", "Incidente sin regla de enrutamiento.");
+      .field("detail", "Incidente sin regla de enrutamiento legacy.");
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/regla de enrutamiento/i);
-    expect(mockTicketCreate).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect(res.body.ticket.levelAssigned).toBe("N2");
+    expect(mockTicketCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          serviceId: SERVICE_ID,
+          levelAssigned: "N2",
+          responsibleArea: "TICS",
+        }),
+      })
+    );
   });
 });

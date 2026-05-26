@@ -6,7 +6,9 @@ import AdminCatalogo from "./pages/AdminCatalogo";
 import PanelTecnicoV2 from "./pages/PanelTecnicoV2";
 import BaseConocimiento from "./pages/BaseConocimiento";
 import MisTickets from "./pages/MisTickets";
+import MisTicketsAceptados from "./pages/MisTicketsAceptados";
 import AdminStats from "./pages/AdminStats";
+import AdminHistorial from "./pages/AdminHistorial";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { getCurrentUser, landingRouteFor } from "./lib/auth";
 
@@ -48,10 +50,26 @@ export default function App() {
         }
       />
       <Route
+        path="/mis-aceptados"
+        element={
+          <ProtectedRoute roles={["admin", "tech_n1", "tech_n2", "tech_n3", "tech_n4"]}>
+            <MisTicketsAceptados />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin/stats"
         element={
           <ProtectedRoute roles={["admin"]}>
             <AdminStats />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/historial"
+        element={
+          <ProtectedRoute roles={["admin"]}>
+            <AdminHistorial />
           </ProtectedRoute>
         }
       />

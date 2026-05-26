@@ -30,3 +30,22 @@ export async function fetchUsersByIds(
   );
   return response.data.users ?? [];
 }
+
+export interface TechnicianLite {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  isActive: boolean;
+}
+
+// Pide a auth-service la lista de técnicos. El endpoint en auth-service ya
+// valida que el caller sea admin (con el JWT que reenviamos).
+export async function fetchTechnicians(userToken: string): Promise<TechnicianLite[]> {
+  const url = `${env.authServiceUrl}/auth/technicians`;
+  const response = await axios.get<{ technicians: TechnicianLite[] }>(url, {
+    headers: { Authorization: `Bearer ${userToken}` },
+    timeout: 5000,
+  });
+  return response.data.technicians ?? [];
+}

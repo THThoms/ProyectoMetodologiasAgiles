@@ -311,4 +311,32 @@ router.post("/users/lookup", verifyJwt, async (req: Request, res: Response) => {
   return res.json({ users });
 });
 
+// ---------------------------------------------------------------------------
+// GET /auth/technicians -> Listado de técnicos para que el admin pueda
+// seleccionarlos al asignar manualmente. Solo admin (los técnicos no necesitan
+// ver la planilla de pares).
+// Modelo `User` no tiene flag `isActive` por ahora; se considera vigente a
+// todo usuario con rol tech_*. Devolvemos `isActive=true` en todos para que
+// el frontend tenga un esquema estable cuando ese flag se agregue.
+// ---------------------------------------------------------------------------
+router.get("/technicians", verifyJwt, async (req: Request, res: Response) => {
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({ error: "Solo el administrador puede listar técnicos" });
+  }
+  const technicians = await prisma.user.findMany({
+    where: { role: { in: ["tech_n1", "tech_n2", "tech_n3", "tech_n4"] } },
+    select: { id: true, email: true, name: true, role: true },
+    orderBy: [{ role: "asc" }, { name: "asc" }],
+  });
+  return res.json({
+    technicians: technicians.map((t) => ({
+      id: t.id,
+      email: t.email,
+      name: t.name,
+      role: t.role,
+      isActive: true,
+    })),
+  });
+});
+
 export default router;
