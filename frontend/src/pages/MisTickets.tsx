@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { api, extractApiError } from "../lib/api";
 import TicketHistoryModal from "../components/TicketHistoryModal";
+import { getResponsibleAreaLabel, getTechnicianNameLabel, ResponsibleAreaRef } from "../lib/technician";
 
 interface Ticket {
   id: string;
@@ -13,7 +14,7 @@ interface Ticket {
   detail: string;
   status: "abierto" | "en_proceso" | "escalado" | "resuelto" | "cerrado";
   priority: "baja" | "media" | "alta" | "critica";
-  responsibleArea: "TECHNICIANS" | "TICS" | "GENERAL";
+  responsibleArea: ResponsibleAreaRef;
   assignmentStatus: "unassigned" | "available" | "accepted" | "assigned_by_admin";
   assignedTechnicianId: string | null;
   assignedTechnicianName: string | null;
@@ -40,7 +41,7 @@ function assignmentMessage(t: Ticket): { text: string; tone: "wait" | "ok" } {
   }
   const verb = t.assignmentStatus === "assigned_by_admin" ? "asignado por admin a" : "aceptado por";
   return {
-    text: `Ticket ${verb} ${t.assignedTechnicianName ?? "técnico"}`,
+    text: `Ticket ${verb} ${getTechnicianNameLabel(t.assignedTechnicianName)}`,
     tone: "ok",
   };
 }
@@ -127,7 +128,7 @@ export default function MisTickets() {
                           {status.label}
                         </span>
                         <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold bg-gray-100 text-gray-700">
-                          {t.responsibleArea}
+                          {getResponsibleAreaLabel(t.responsibleArea)}
                         </span>
                       </div>
                       <p className="text-sm text-gray-700 line-clamp-2">{t.detail}</p>

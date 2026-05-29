@@ -6,13 +6,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api, extractApiError } from "../lib/api";
+import { getResponsibleAreaLabel, ResponsibleAreaRef } from "../lib/technician";
 
 export interface ResolveTicketRef {
   id: string;
   number: string;
   serviceId: string;
   serviceName: string | null;
-  responsibleArea: "TECHNICIANS" | "TICS" | "GENERAL";
+  responsibleArea: ResponsibleAreaRef;
 }
 
 interface Props {
@@ -159,7 +160,7 @@ export default function ResolveTicketModal({ ticket, onClose, onSuccess }: Props
           <h2 className="text-lg font-bold text-uta-900">Resolver ticket</h2>
           <p className="mt-1 text-sm text-gray-600">
             <span className="font-mono font-semibold">{ticket.number}</span> ·{" "}
-            {ticket.serviceName ?? "—"} · área {ticket.responsibleArea}
+            {ticket.serviceName ?? "—"} · área {getResponsibleAreaLabel(ticket.responsibleArea)}
           </p>
         </div>
 

@@ -5,11 +5,12 @@
 
 import { useState } from "react";
 import { api, extractApiError } from "../lib/api";
+import { getResponsibleAreaLabel, ResponsibleAreaRef } from "../lib/technician";
 
 export interface TicketActionRef {
   id: string;
   number: string;
-  responsibleArea: "TECHNICIANS" | "TICS" | "GENERAL";
+  responsibleArea: ResponsibleAreaRef;
 }
 
 interface ModalProps {
@@ -123,7 +124,7 @@ export function ContributionModal({ ticket, onClose, onSuccess }: ModalProps) {
 export function EscalateV2Modal({ ticket, onClose, onSuccess }: ModalProps) {
   const [reason, setReason] = useState("");
   const [workDone, setWorkDone] = useState("");
-  const [targetArea, setTargetArea] = useState<string>(ticket.responsibleArea);
+  const [targetArea, setTargetArea] = useState<ResponsibleAreaRef>(ticket.responsibleArea);
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +166,7 @@ export function EscalateV2Modal({ ticket, onClose, onSuccess }: ModalProps) {
             <h2 className="text-lg font-bold text-uta-900">Escalar ticket</h2>
             <p className="mt-1 text-sm text-gray-600">
               <span className="font-mono font-semibold">{ticket.number}</span> · área actual:{" "}
-              {ticket.responsibleArea}
+              {getResponsibleAreaLabel(ticket.responsibleArea)}
             </p>
           </div>
           <div className="space-y-3 px-6 py-5">
@@ -199,12 +200,12 @@ export function EscalateV2Modal({ ticket, onClose, onSuccess }: ModalProps) {
               <select
                 className="input"
                 value={targetArea}
-                onChange={(e) => setTargetArea(e.target.value)}
+                onChange={(e) => setTargetArea(e.target.value as ResponsibleAreaRef)}
                 disabled={submitting}
               >
-                <option value="TECHNICIANS">TECHNICIANS</option>
-                <option value="TICS">TICS</option>
-                <option value="GENERAL">GENERAL</option>
+                <option value="TECHNICIANS">{getResponsibleAreaLabel("TECHNICIANS")}</option>
+                <option value="TICS">{getResponsibleAreaLabel("TICS")}</option>
+                <option value="GENERAL">{getResponsibleAreaLabel("GENERAL")}</option>
               </select>
             </div>
             <div>

@@ -2,11 +2,18 @@ import { ReactNode } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { api } from "../lib/api";
 import { clearToken, getCurrentUser, isStaffRole } from "../lib/auth";
+import { getAccountNameLabel } from "../lib/technician";
 
 interface LayoutProps {
   children: ReactNode;
   /** Mostrar el subnav (oculto en /login) */
   showSubnav?: boolean;
+}
+
+function getRoleLabel(role: string): string {
+  if (role === "admin") return "Administrador";
+  if (role.startsWith("tech_")) return "Técnico";
+  return "Solicitante";
 }
 
 export function Layout({ children, showSubnav = true }: LayoutProps) {
@@ -41,9 +48,9 @@ export function Layout({ children, showSubnav = true }: LayoutProps) {
           {user && (
             <div className="flex items-center gap-4">
               <div className="text-right text-sm">
-                <div className="font-semibold">{user.name}</div>
+                <div className="font-semibold">{getAccountNameLabel(user)}</div>
                 <div className="text-uta-100/80 text-xs">
-                  {user.email} · <span className="uppercase">{user.role}</span>
+                  {user.email} · <span>{getRoleLabel(user.role)}</span>
                 </div>
               </div>
               <button

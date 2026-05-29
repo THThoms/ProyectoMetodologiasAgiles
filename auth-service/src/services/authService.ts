@@ -2,10 +2,9 @@ import { prisma } from "../db/client";
 import { Role } from "@prisma/client";
 import { signAuthToken, getExpiresAt } from "../utils/jwt";
 import { env } from "../config/env";
-import bcrypt from "bcryptjs";
-import crypto from "crypto";
-
-const BCRYPT_ROUNDS = 12;
+// HU-13: la política, el hashing y la verificación de contraseñas viven en un
+// helper único reutilizable (passwordSecurity). Aquí solo se orquesta el login.
+import { hashPassword, verifyPassword } from "../utils/passwordSecurity";
 
 export interface MicrosoftClaims {
   oid?: string;
@@ -24,34 +23,10 @@ export class DomainNotAllowedError extends Error {
 
 export class InvalidCredentialsError extends Error {
   constructor() {
-    super("Correo o contraseña incorrectos");
+    // Mensaje genérico: no revela si falló el correo o la contraseña.
+    super("Credenciales inválidas");
     this.name = "InvalidCredentialsError";
   }
-}
-
-// bcrypt con salt para contraseñas nuevas. Hashes legacy SHA-256 (64 chars hex)
-// se detectan por verifyPassword() y se re-hashean a bcrypt en el siguiente login.
-function hashPassword(password: string): string {
-  return bcrypt.hashSync(password, BCRYPT_ROUNDS);
-}
-
-// SHA-256 legacy: usado solo para verificar hashes viejos antes de migrarlos a bcrypt.
-function sha256Hex(value: string): string {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
-
-// Detecta el formato del hash y compara contra la contraseña en claro.
-// Devuelve { ok, legacy } — legacy=true significa que hay que re-hashear con bcrypt.
-function verifyPassword(plain: string, stored: string): { ok: boolean; legacy: boolean } {
-  if (stored.startsWith("$2")) {
-    return { ok: bcrypt.compareSync(plain, stored), legacy: false };
-  }
-  // Hash legacy SHA-256 (sin salt, 64 chars hex). Comparación constant-time
-  // para evitar timing attacks aunque sea código en deprecación.
-  const candidate = sha256Hex(plain);
-  if (candidate.length !== stored.length) return { ok: false, legacy: true };
-  const ok = crypto.timingSafeEqual(Buffer.from(candidate), Buffer.from(stored));
-  return { ok, legacy: true };
 }
 
 // Extrae el email del payload de Microsoft (los claims varían según tipo de cuenta).

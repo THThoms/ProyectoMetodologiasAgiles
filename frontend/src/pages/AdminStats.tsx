@@ -10,9 +10,16 @@ import { api, extractApiError } from "../lib/api";
 import DonutChart, { DonutSlice } from "../components/charts/DonutChart";
 import BarChart from "../components/charts/BarChart";
 import LineChart from "../components/charts/LineChart";
-import { getTechnicianAreaLabel, getTechnicianDisplayLabel } from "../lib/technician";
+import {
+  getResponsibleAreaLabel,
+  getTechnicianAreaLabel,
+  getTechnicianDisplayLabel,
+  getTechnicianNameLabel,
+  ResponsibleAreaRef,
+} from "../lib/technician";
 
 interface StatsResponse {
+  filters?: { dateFrom: string | null; dateTo: string | null };
   totals: {
     tickets: number;
     pending: number;
@@ -37,12 +44,30 @@ interface StatsResponse {
   avgResolveSeconds: number | null;
 }
 
+// Formatea YYYY-MM-DD a DD/MM/YYYY para mostrar el rango activo.
+function formatDayLabel(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+// Devuelve la fecha de hoy y desplazamientos en formato YYYY-MM-DD (UTC) para
+// los accesos rápidos. Usamos UTC para coincidir con el filtro del backend.
+function isoDay(offsetDays = 0): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
+}
+function isoMonthStart(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
+}
+
 interface UnassignedTicket {
   id: string;
   number: string;
   userName: string | null;
   serviceName: string | null;
-  responsibleArea: "TECHNICIANS" | "TICS" | "GENERAL";
+  responsibleArea: ResponsibleAreaRef;
   priority: string;
   status: string;
   assignedTechnicianId: string | null;
@@ -56,7 +81,7 @@ interface Technician {
   email: string;
   role: string;
   isActive: boolean;
-  areas: Array<"TECHNICIANS" | "TICS" | "GENERAL">;
+  areas: ResponsibleAreaRef[];
 }
 
 function formatSecs(s: number | null): string {
@@ -100,18 +125,35 @@ export default function AdminStats() {
   const [flash, setFlash] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<UnassignedTicket | null>(null);
 
-  const load = useCallback(async () => {
+  // HU-12 - Filtros de fecha. `dateFrom/dateTo` son lo que el admin escribe;
+  // `applied*` es lo último consultado (para el banner "Mostrando datos…").
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [appliedFrom, setAppliedFrom] = useState("");
+  const [appliedTo, setAppliedTo] = useState("");
+  const [dateError, setDateError] = useState<string | null>(null);
+
+  const rangeInvalid = Boolean(dateFrom && dateTo && dateFrom > dateTo);
+
+  const load = useCallback(async (from: string, to: string) => {
     setLoading(true);
     setError(null);
     try {
+      const params = new URLSearchParams();
+      if (from) params.set("dateFrom", from);
+      if (to) params.set("dateTo", to);
+      const qs = params.toString();
+      const statsUrl = qs ? `/api/admin/stats/tickets?${qs}` : "/api/admin/stats/tickets";
       const [s, t, te] = await Promise.all([
-        api.get<StatsResponse>("/api/admin/stats/tickets"),
+        api.get<StatsResponse>(statsUrl),
         api.get<{ tickets: UnassignedTicket[]; areas: string[] }>("/api/tickets/available"),
         api.get<{ technicians: Technician[] }>("/api/admin/technicians"),
       ]);
       setStats(s.data);
       setTickets(t.data.tickets);
       setTechnicians(te.data.technicians);
+      setAppliedFrom(from);
+      setAppliedTo(to);
     } catch (err) {
       setError(extractApiError(err));
     } finally {
@@ -120,8 +162,36 @@ export default function AdminStats() {
   }, []);
 
   useEffect(() => {
-    load();
+    load("", "");
   }, [load]);
+
+  function applyFilters() {
+    if (rangeInvalid) {
+      setDateError("La fecha inicial no puede ser posterior a la fecha final.");
+      return;
+    }
+    setDateError(null);
+    load(dateFrom, dateTo);
+  }
+
+  function clearFilters() {
+    setDateFrom("");
+    setDateTo("");
+    setDateError(null);
+    load("", "");
+  }
+
+  function applyQuickRange(from: string, to: string) {
+    setDateFrom(from);
+    setDateTo(to);
+    setDateErrorIfNeeded(from, to);
+    load(from, to);
+  }
+
+  // Pequeño helper para limpiar el error al usar accesos rápidos válidos.
+  function setDateErrorIfNeeded(from: string, to: string) {
+    setDateError(from && to && from > to ? "Rango inválido." : null);
+  }
 
   // --- Series para gráficos -------------------------------------------------
   const statusDonut: DonutSlice[] = useMemo(() => {
@@ -150,7 +220,7 @@ export default function AdminStats() {
   const areaBars = useMemo(() => {
     if (!stats) return [];
     return stats.byResponsibleArea.map((b) => ({
-      label: b.area,
+      label: getResponsibleAreaLabel(b.area),
       value: b.count,
       color: AREA_COLORS[b.area] ?? "#9c1f2c",
     }));
@@ -165,15 +235,32 @@ export default function AdminStats() {
     if (!stats) return [];
     return stats.byTechnician
       .slice(0, 8)
-      .map((b) => ({ label: b.technicianName, value: b.count }));
-  }, [stats]);
+      .map((b) => {
+        const technician = technicians.find((t) => t.id === b.technicianId);
+        return {
+          label: technician
+            ? getTechnicianDisplayLabel(technician, { includeEmail: false })
+            : getTechnicianNameLabel(b.technicianName),
+          value: b.count,
+        };
+      });
+  }, [stats, technicians]);
 
   const resolvedBars = useMemo(() => {
     if (!stats?.resolvedByTechnician) return [];
     return stats.resolvedByTechnician
       .slice(0, 8)
-      .map((b) => ({ label: b.technicianName, value: b.count, color: "#10b981" }));
-  }, [stats]);
+      .map((b) => {
+        const technician = technicians.find((t) => t.id === b.technicianId);
+        return {
+          label: technician
+            ? getTechnicianDisplayLabel(technician, { includeEmail: false })
+            : getTechnicianNameLabel(b.technicianName),
+          value: b.count,
+          color: "#10b981",
+        };
+      });
+  }, [stats, technicians]);
 
   return (
     <Layout>
@@ -193,6 +280,89 @@ export default function AdminStats() {
           </Link>
         </div>
 
+        {/* HU-12 - Filtro por rango de fechas */}
+        <div className="card mb-6">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Filtrar estadísticas por fecha
+            </h2>
+            <span className="text-xs text-gray-500">
+              {appliedFrom || appliedTo ? (
+                <>
+                  Mostrando datos
+                  {appliedFrom ? ` del ${formatDayLabel(appliedFrom)}` : " desde el inicio"}
+                  {appliedTo ? ` al ${formatDayLabel(appliedTo)}` : " hasta hoy"}
+                </>
+              ) : (
+                "Mostrando estadísticas generales (sin filtro)"
+              )}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="label" htmlFor="date-from">Fecha desde</label>
+              <input
+                id="date-from"
+                type="date"
+                className="input"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  setDateErrorIfNeeded(e.target.value, dateTo);
+                }}
+                disabled={loading}
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="date-to">Fecha hasta</label>
+              <input
+                id="date-to"
+                type="date"
+                className="input"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  setDateErrorIfNeeded(dateFrom, e.target.value);
+                }}
+                disabled={loading}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={applyFilters}
+              disabled={loading || rangeInvalid}
+              className="rounded bg-uta-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-uta-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              Aplicar
+            </button>
+            <button
+              type="button"
+              onClick={clearFilters}
+              disabled={loading || (!dateFrom && !dateTo && !appliedFrom && !appliedTo)}
+              className="rounded border border-gray-300 bg-white px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Limpiar
+            </button>
+          </div>
+
+          {/* Accesos rápidos */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <QuickRange label="Hoy" onClick={() => applyQuickRange(isoDay(0), isoDay(0))} disabled={loading} />
+            <QuickRange label="Últimos 7 días" onClick={() => applyQuickRange(isoDay(-6), isoDay(0))} disabled={loading} />
+            <QuickRange label="Últimos 30 días" onClick={() => applyQuickRange(isoDay(-29), isoDay(0))} disabled={loading} />
+            <QuickRange label="Este mes" onClick={() => applyQuickRange(isoMonthStart(), isoDay(0))} disabled={loading} />
+          </div>
+
+          {dateError && (
+            <div className="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              {dateError}
+            </div>
+          )}
+        </div>
+
         {flash && (
           <div className="mb-4 rounded-md border border-green-300 bg-green-50 px-4 py-3 text-sm text-green-900">
             {flash}
@@ -208,6 +378,19 @@ export default function AdminStats() {
           <div className="card py-12 text-center">
             <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-uta-200 border-t-uta-600" />
             <p className="text-sm text-gray-500">Cargando estadísticas…</p>
+          </div>
+        )}
+
+        {!loading && stats && stats.totals.tickets === 0 && (
+          <div className="card mb-6 border-dashed py-10 text-center">
+            <p className="text-sm font-semibold text-gray-600">
+              No hay tickets en el período seleccionado.
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              {appliedFrom || appliedTo
+                ? "Prueba con otro rango de fechas o limpia el filtro."
+                : "Aún no se han registrado tickets."}
+            </p>
           </div>
         )}
 
@@ -261,7 +444,11 @@ export default function AdminStats() {
 
             <div className="mb-6">
               <LineChart
-                title="Tickets creados — últimos 30 días"
+                title={
+                  appliedFrom || appliedTo
+                    ? "Tickets creados — período seleccionado"
+                    : "Tickets creados — últimos 30 días"
+                }
                 data={(stats.createdByDay ?? []).map((p) => ({
                   date: p.date,
                   value: p.count,
@@ -296,11 +483,11 @@ export default function AdminStats() {
                 {tickets.map((t) => (
                   <tr key={t.id} className="hover:bg-gray-50">
                     <td className="whitespace-nowrap px-4 py-3 font-mono font-semibold text-uta-900">{t.number}</td>
-                    <td className="px-4 py-3 text-gray-700">{t.userName ?? "—"}</td>
+                    <td className="px-4 py-3 text-gray-700">{t.userName ? getTechnicianNameLabel(t.userName) : "—"}</td>
                     <td className="px-4 py-3 text-gray-700">{t.serviceName ?? "—"}</td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <span className="inline-flex rounded bg-uta-50 px-2 py-0.5 text-xs font-bold text-uta-900">
-                        {t.responsibleArea}
+                        {getResponsibleAreaLabel(t.responsibleArea)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{t.priority}</td>
@@ -328,7 +515,7 @@ export default function AdminStats() {
             onSuccess={() => {
               setAssigning(null);
               setFlash("Ticket asignado correctamente");
-              load();
+              load(appliedFrom, appliedTo);
               window.setTimeout(() => setFlash(null), 5000);
             }}
           />
@@ -341,6 +528,27 @@ export default function AdminStats() {
 // ---------------------------------------------------------------------------
 // Pequeñas tarjetas KPI con acento de color por categoría.
 // ---------------------------------------------------------------------------
+function QuickRange({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:border-uta-400 hover:text-uta-800 disabled:opacity-50"
+    >
+      {label}
+    </button>
+  );
+}
+
 function Kpi({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
     <div className="card flex flex-col items-center justify-center text-center">
@@ -428,7 +636,7 @@ function AssignModal({
             <h2 className="text-lg font-bold text-uta-900">Asignar ticket manualmente</h2>
             <p className="mt-1 text-sm text-gray-600">
               <span className="font-mono font-semibold">{ticket.number}</span> · área{" "}
-              {ticket.responsibleArea}
+              {getResponsibleAreaLabel(ticket.responsibleArea)}
             </p>
           </div>
           <div className="space-y-3 px-6 py-5">
@@ -467,7 +675,7 @@ function AssignModal({
               </select>
               <p className="mt-1 text-xs text-gray-500">
                 Solo se muestran técnicos cuyo rol cubre el área{" "}
-                <strong>{ticket.responsibleArea}</strong>.
+                <strong>{getResponsibleAreaLabel(ticket.responsibleArea)}</strong>.
               </p>
             </div>
             <div>

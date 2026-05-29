@@ -85,6 +85,20 @@ const STATUS_LABEL: Record<TicketStatus, string> = {
   cerrado: "Cerrado",
 };
 
+const AREA_LABEL: Record<ResponsibleArea, string> = {
+  TECHNICIANS: "Técnicos",
+  TICS: "TICs",
+  GENERAL: "General",
+};
+
+function areaLabel(area: ResponsibleArea | null | undefined): string {
+  return area ? AREA_LABEL[area] : "responsable";
+}
+
+function performerLabel(name: string): string {
+  return /^T[eé]cnico\s+Nivel\b/i.test(name) ? "Técnico" : name;
+}
+
 export function describeEvent(event: {
   action: EventAction;
   previousLevel: Level | null;
@@ -96,35 +110,36 @@ export function describeEvent(event: {
   reason: string | null;
   performedByName: string;
 }): string {
+  const performer = performerLabel(event.performedByName);
   switch (event.action) {
     case "CREATED":
-      return `${event.performedByName} creó el ticket`;
+      return `${performer} creó el ticket`;
     case "CATEGORIZED":
-      return `Ticket categorizado para el área ${event.newArea ?? "responsable"}`;
+      return `Ticket categorizado para el área ${areaLabel(event.newArea)}`;
     case "AVAILABLE":
-      return `Ticket disponible en la bandeja del área ${event.newArea ?? "responsable"}`;
+      return `Ticket disponible en la bandeja del área ${areaLabel(event.newArea)}`;
     case "ACCEPTED":
-      return `${event.performedByName} aceptó el ticket`;
+      return `${performer} aceptó el ticket`;
     case "ASSIGNED":
-      return `${event.performedByName} asignó el ticket`;
+      return `${performer} asignó el ticket`;
     case "REASSIGNED":
-      return `${event.performedByName} reasignó el ticket`;
+      return `${performer} reasignó el ticket`;
     case "CONTRIBUTED":
-      return `${event.performedByName} agregó una aportación al ticket`;
+      return `${performer} agregó una aportación al ticket`;
     case "ESCALATED":
       if (event.previousArea && event.newArea && event.previousArea !== event.newArea) {
-        return `${event.performedByName} escaló el ticket de ${event.previousArea} a ${event.newArea}`;
+        return `${performer} escaló el ticket de ${areaLabel(event.previousArea)} a ${areaLabel(event.newArea)}`;
       }
-      return `${event.performedByName} escaló el ticket`;
+      return `${performer} escaló el ticket`;
     case "STATUS_CHANGED":
-      return `${event.performedByName} cambió el estado de ${STATUS_LABEL[event.previousStatus ?? "abierto"]} a ${STATUS_LABEL[event.newStatus ?? "abierto"]}`;
+      return `${performer} cambió el estado de ${STATUS_LABEL[event.previousStatus ?? "abierto"]} a ${STATUS_LABEL[event.newStatus ?? "abierto"]}`;
     case "COMMENTED":
-      return `${event.performedByName} agregó un comentario`;
+      return `${performer} agregó un comentario`;
     case "RESOLVED":
-      return `${event.performedByName} marcó el ticket como resuelto`;
+      return `${performer} marcó el ticket como resuelto`;
     case "CLOSED":
-      return `${event.performedByName} cerró el ticket`;
+      return `${performer} cerró el ticket`;
     default:
-      return `${event.performedByName} realizó una acción sobre el ticket`;
+      return `${performer} realizó una acción sobre el ticket`;
   }
 }

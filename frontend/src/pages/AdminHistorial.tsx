@@ -7,7 +7,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
 import { api, extractApiError } from "../lib/api";
 import TicketHistoryModal from "../components/TicketHistoryModal";
-import { getTechnicianDisplayLabel } from "../lib/technician";
+import {
+  getResponsibleAreaLabel,
+  getTechnicianDisplayLabel,
+  getTechnicianNameLabel,
+  ResponsibleAreaRef,
+} from "../lib/technician";
 
 interface HistoryTicket {
   id: string;
@@ -16,7 +21,7 @@ interface HistoryTicket {
   requesterEmail: string | null;
   serviceName: string | null;
   serviceId: string;
-  responsibleArea: "TECHNICIANS" | "TICS" | "GENERAL";
+  responsibleArea: ResponsibleAreaRef;
   priority: "baja" | "media" | "alta" | "critica";
   status: "abierto" | "en_proceso" | "escalado" | "resuelto" | "cerrado";
   assignmentStatus: string;
@@ -238,7 +243,7 @@ export default function AdminHistorial() {
               <option value="">Todas</option>
               {AREAS.map((a) => (
                 <option key={a} value={a}>
-                  {a}
+                  {getResponsibleAreaLabel(a)}
                 </option>
               ))}
             </select>
@@ -330,11 +335,11 @@ export default function AdminHistorial() {
                   return (
                     <tr key={t.id} className="hover:bg-gray-50">
                       <td className="whitespace-nowrap px-4 py-3 font-mono font-semibold text-uta-900">{t.number}</td>
-                      <td className="px-4 py-3 text-gray-700">{t.requesterName ?? "—"}</td>
+                      <td className="px-4 py-3 text-gray-700">{t.requesterName ? getTechnicianNameLabel(t.requesterName) : "—"}</td>
                       <td className="px-4 py-3 text-gray-700 truncate max-w-[160px]">{t.serviceName ?? "—"}</td>
                       <td className="whitespace-nowrap px-4 py-3">
                         <span className="inline-flex rounded bg-uta-50 px-2 py-0.5 text-xs font-bold text-uta-900">
-                          {t.responsibleArea}
+                          {getResponsibleAreaLabel(t.responsibleArea)}
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-gray-700">{t.priority}</td>
@@ -343,7 +348,7 @@ export default function AdminHistorial() {
                           {s.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-700">{t.assignedTechnicianName ?? "—"}</td>
+                      <td className="px-4 py-3 text-gray-700">{t.assignedTechnicianName ? getTechnicianNameLabel(t.assignedTechnicianName) : "—"}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">{formatDate(t.createdAt)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">{formatDate(t.resolvedAt)}</td>
                       <td className="whitespace-nowrap px-4 py-3">

@@ -8,6 +8,12 @@ import { Link } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { api, extractApiError } from "../lib/api";
 import { getCurrentUser } from "../lib/auth";
+import {
+  getAccountNameLabel,
+  getResponsibleAreaLabel,
+  getTechnicianNameLabel,
+  ResponsibleAreaRef,
+} from "../lib/technician";
 
 interface Ticket {
   id: string;
@@ -19,7 +25,7 @@ interface Ticket {
   detail: string;
   status: "abierto" | "en_proceso" | "escalado" | "resuelto" | "cerrado";
   priority: "baja" | "media" | "alta" | "critica";
-  responsibleArea: "TECHNICIANS" | "TICS" | "GENERAL";
+  responsibleArea: ResponsibleAreaRef;
   assignmentStatus: "unassigned" | "available" | "accepted" | "assigned_by_admin";
   assignedTechnicianId: string | null;
   assignedTechnicianName: string | null;
@@ -51,9 +57,9 @@ function formatDate(iso: string): string {
 
 export default function PanelTecnicoV2() {
   const user = getCurrentUser();
-  const role = user?.role ?? "user";
+  const isAdmin = user?.role === "admin";
   const [available, setAvailable] = useState<Ticket[]>([]);
-  const [areas, setAreas] = useState<string[]>([]);
+  const [areas, setAreas] = useState<ResponsibleAreaRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -62,7 +68,7 @@ export default function PanelTecnicoV2() {
     setLoading(true);
     setError(null);
     try {
-      const r = await api.get<{ tickets: Ticket[]; areas: string[] }>("/api/tickets/available");
+      const r = await api.get<{ tickets: Ticket[]; areas: ResponsibleAreaRef[] }>("/api/tickets/available");
       setAvailable(r.data.tickets);
       setAreas(r.data.areas ?? []);
     } catch (err) {
@@ -95,7 +101,7 @@ export default function PanelTecnicoV2() {
           <div>
             <h1 className="text-2xl font-bold text-uta-900">Panel Técnico</h1>
             <p className="mt-1 text-sm text-gray-600">
-              {user?.name} · <span className="uppercase">{role}</span> · áreas: {areas.join(", ") || "—"}
+              {getAccountNameLabel(user)} · áreas: {areas.map(getResponsibleAreaLabel).join(", ") || "—"}
             </p>
           </div>
           <Link
@@ -160,12 +166,12 @@ export default function PanelTecnicoV2() {
                     <tr key={t.id} className="hover:bg-gray-50">
                       <td className="whitespace-nowrap px-4 py-3 font-mono font-semibold text-uta-900">{t.number}</td>
                       <td className="px-4 py-3 text-gray-700 truncate max-w-[180px]" title={t.userEmail ?? ""}>
-                        {t.userName ?? "—"}
+                        {t.userName ? getTechnicianNameLabel(t.userName) : "—"}
                       </td>
                       <td className="px-4 py-3 text-gray-700 truncate max-w-[180px]">{t.serviceName ?? "—"}</td>
                       <td className="whitespace-nowrap px-4 py-3">
                         <span className="inline-flex rounded bg-uta-50 px-2 py-0.5 text-xs font-bold text-uta-900">
-                          {t.responsibleArea}
+                          {getResponsibleAreaLabel(t.responsibleArea)}
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">
@@ -181,8 +187,8 @@ export default function PanelTecnicoV2() {
                         <button
                           type="button"
                           onClick={() => acceptTicket(t)}
-                          disabled={role === "admin"}
-                          title={role === "admin" ? "El admin debe usar la asignación manual" : "Aceptar ticket"}
+                          disabled={isAdmin}
+                          title={isAdmin ? "El admin debe usar la asignación manual" : "Aceptar ticket"}
                           className="rounded bg-uta-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-uta-800 disabled:cursor-not-allowed disabled:bg-gray-300"
                         >
                           Aceptar

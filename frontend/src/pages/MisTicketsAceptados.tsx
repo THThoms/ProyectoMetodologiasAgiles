@@ -16,6 +16,11 @@ import { getCurrentUser } from "../lib/auth";
 import { ContributionModal, EscalateV2Modal } from "../components/TicketActionModals";
 import ResolveTicketModal from "../components/ResolveTicketModal";
 import TicketHistoryModal from "../components/TicketHistoryModal";
+import {
+  getResponsibleAreaLabel,
+  getTechnicianNameLabel,
+  ResponsibleAreaRef,
+} from "../lib/technician";
 
 interface Ticket {
   id: string;
@@ -27,7 +32,7 @@ interface Ticket {
   detail: string;
   status: "abierto" | "en_proceso" | "escalado" | "resuelto" | "cerrado";
   priority: "baja" | "media" | "alta" | "critica";
-  responsibleArea: "TECHNICIANS" | "TICS" | "GENERAL";
+  responsibleArea: ResponsibleAreaRef;
   assignmentStatus: "unassigned" | "available" | "accepted" | "assigned_by_admin";
   assignedTechnicianId: string | null;
   assignedTechnicianName: string | null;
@@ -226,7 +231,7 @@ export default function MisTicketsAceptados() {
                           {p.label}
                         </span>
                         <span className="inline-flex rounded-full bg-uta-50 px-2 py-0.5 text-xs font-bold text-uta-900">
-                          {t.responsibleArea}
+                          {getResponsibleAreaLabel(t.responsibleArea)}
                         </span>
                         {tab === "active" && acceptedByMe(t) && (
                           <span className="inline-flex rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-800">
@@ -236,7 +241,7 @@ export default function MisTicketsAceptados() {
                       </div>
                       <p className="text-sm text-gray-700 line-clamp-2">{t.detail}</p>
                       <p className="mt-1 text-xs text-gray-500">
-                        Solicitante: <strong>{t.userName ?? "—"}</strong> · Servicio:{" "}
+                        Solicitante: <strong>{t.userName ? getTechnicianNameLabel(t.userName) : "—"}</strong> · Servicio:{" "}
                         <strong>{t.serviceName ?? "—"}</strong>
                       </p>
                       <p className="mt-0.5 text-xs text-gray-500">
@@ -250,7 +255,7 @@ export default function MisTicketsAceptados() {
                       </p>
                       {tab === "history" && t.resolvedByName && (
                         <p className="mt-0.5 text-xs text-gray-500">
-                          Resuelto por <strong>{t.resolvedByName}</strong>
+                          Resuelto por <strong>{getTechnicianNameLabel(t.resolvedByName)}</strong>
                           {t.knowledgeArticleId ? " · solución vinculada en KB" : null}
                         </p>
                       )}

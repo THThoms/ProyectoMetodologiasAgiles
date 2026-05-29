@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "../components/Layout";
 import { api, extractApiError } from "../lib/api";
 import { getCurrentUser } from "../lib/auth";
+import { getAccountNameLabel } from "../lib/technician";
 
 interface CatalogService {
   id: string;
@@ -202,7 +203,7 @@ export default function NuevoTicket() {
           <div className="grid gap-4 text-sm sm:grid-cols-2">
             <div>
               <p className="label">Solicitante</p>
-              <p className="font-medium text-gray-900">{user?.name}</p>
+              <p className="font-medium text-gray-900">{getAccountNameLabel(user)}</p>
               <p className="text-xs text-gray-500">{user?.email}</p>
             </div>
             <div>

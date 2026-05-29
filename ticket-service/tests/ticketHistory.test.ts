@@ -150,6 +150,8 @@ describe("GET /tickets/history/:id - HU-09", () => {
         newStatus: "escalado",
         previousLevel: "N1",
         newLevel: "N2",
+        previousArea: "TECHNICIANS",
+        newArea: "TICS",
         reason: "Caso complejo",
         performedBy: "tech-id",
         performedByName: "Técnico Nivel 1",
@@ -170,6 +172,9 @@ describe("GET /tickets/history/:id - HU-09", () => {
       reason: "Caso complejo",
       performedBy: { id: "tech-id", name: "Técnico Nivel 1" },
     });
+    expect(res.body.history[0].description).toContain("Técnicos");
+    expect(res.body.history[0].description).toContain("TICs");
+    expect(res.body.history[0].description).not.toContain("Nivel 1");
   });
 
   it("AC3: devuelve 404 si el ticket no existe", async () => {

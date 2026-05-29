@@ -26,11 +26,33 @@ export interface TechnicianRef {
   role?: string;
 }
 
+export type ResponsibleAreaRef = "TECHNICIANS" | "TICS" | "GENERAL";
+
+const RESPONSIBLE_AREA_LABEL: Record<ResponsibleAreaRef, string> = {
+  TECHNICIANS: "Técnicos",
+  TICS: "TICs",
+  GENERAL: "General",
+};
+
+export function getResponsibleAreaLabel(area: ResponsibleAreaRef | string): string {
+  return RESPONSIBLE_AREA_LABEL[area as ResponsibleAreaRef] ?? area;
+}
+
+export function getTechnicianNameLabel(name: string | null | undefined): string {
+  if (!name || /^T[eé]cnico\b/i.test(name)) return "Técnico";
+  return name;
+}
+
+export function getAccountNameLabel(user: { name?: string; role?: string } | null | undefined): string {
+  if (user?.role?.startsWith("tech_")) return "Técnico";
+  return user?.name ?? "";
+}
+
 export function getTechnicianAreaLabel(technician: TechnicianRef): string {
   const areas = technician.areas ?? [];
-  if (areas.includes("TICS")) return "TICs";
-  if (areas.includes("TECHNICIANS")) return "Técnicos";
-  if (areas.includes("GENERAL")) return "General";
+  if (areas.includes("TICS")) return getResponsibleAreaLabel("TICS");
+  if (areas.includes("TECHNICIANS")) return getResponsibleAreaLabel("TECHNICIANS");
+  if (areas.includes("GENERAL")) return getResponsibleAreaLabel("GENERAL");
   return "Sin área";
 }
 

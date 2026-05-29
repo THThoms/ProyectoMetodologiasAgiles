@@ -1,13 +1,17 @@
 // Modal compartido de historial de ticket. Lo consumen MisTickets (usuario),
 // MisTicketsAceptados, PanelTecnicoV2 y AdminHistorial.
 //
-// El filtrado de eventos `internal` se hace ahora en el backend cuando el
-// caller es el solicitante. Aquí dejamos un filtro defensivo extra controlado
-// por `audience`: si "requester", se descartan los `internal` por si el
-// servidor enviase alguno por equivocación.
+// El filtrado de eventos `internal` se hace en el backend cuando el caller es
+// el solicitante. Aquí se mantiene un filtro defensivo extra por `audience`.
+//
+// HU-14: botón "Imprimir historial". Abre una ventana limpia y aislada
+// (window.open) con encabezado institucional, datos del ticket y los eventos
+// cronológicos. Se imprime EXACTAMENTE el mismo arreglo de eventos que se ve en
+// pantalla, por lo que el solicitante nunca imprime eventos internos.
 
 import { useEffect, useState } from "react";
 import { api, extractApiError } from "../lib/api";
+import { getResponsibleAreaLabel, getTechnicianNameLabel } from "../lib/technician";
 
 export type HistoryAudience = "requester" | "staff";
 
@@ -33,6 +37,22 @@ interface HistoryEvent {
   createdAt: string;
 }
 
+// Metadatos del ticket que entrega GET /tickets/history/:id (extendido en HU-14).
+interface TicketMeta {
+  number?: string;
+  userName?: string | null;
+  serviceName?: string | null;
+  responsibleArea?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  assignedTechnicianName?: string | null;
+  acceptedAt?: string | null;
+  resolvedAt?: string | null;
+  resolvedByName?: string | null;
+  resolutionSummary?: string | null;
+  createdAt?: string | null;
+}
+
 interface Props {
   ticket: TicketHistoryRef;
   audience: HistoryAudience;
@@ -54,7 +74,22 @@ const ACTION_BADGE: Record<string, string> = {
   CLOSED: "bg-slate-200 text-slate-800",
 };
 
-function formatDate(iso: string): string {
+const STATUS_LABEL: Record<string, string> = {
+  abierto: "Pendiente",
+  en_proceso: "En Proceso",
+  escalado: "Escalado",
+  resuelto: "Resuelto",
+  cerrado: "Cerrado",
+};
+const PRIORITY_LABEL: Record<string, string> = {
+  baja: "Baja",
+  media: "Media",
+  alta: "Alta",
+  critica: "Crítica",
+};
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
   return new Date(iso).toLocaleString("es-EC", {
     year: "numeric",
     month: "short",
@@ -64,8 +99,20 @@ function formatDate(iso: string): string {
   });
 }
 
+// Escapa texto para insertarlo de forma segura en el HTML de la ventana de impresión.
+function esc(value: string | null | undefined): string {
+  if (value == null) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export default function TicketHistoryModal({ ticket, audience, onClose }: Props) {
   const [events, setEvents] = useState<HistoryEvent[]>([]);
+  const [meta, setMeta] = useState<TicketMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,7 +121,7 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
     setLoading(true);
     setError(null);
     api
-      .get<{ history: HistoryEvent[] }>(`/api/tickets/history/${ticket.id}`)
+      .get<{ ticket: TicketMeta; history: HistoryEvent[] }>(`/api/tickets/history/${ticket.id}`)
       .then((r) => {
         if (cancelled) return;
         const all = r.data.history ?? [];
@@ -82,6 +129,7 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
         setEvents(
           audience === "requester" ? all.filter((e) => e.visibility !== "internal") : all
         );
+        setMeta(r.data.ticket ?? null);
       })
       .catch((err) => {
         if (!cancelled) setError(extractApiError(err));
@@ -94,6 +142,166 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
     };
   }, [ticket.id, audience]);
 
+  function buildPrintHtml(): string {
+    const m = meta ?? {};
+    const numero = esc(m.number ?? ticket.number);
+    const servicio = esc(m.serviceName ?? ticket.serviceName ?? "—");
+    const area = m.responsibleArea ? esc(getResponsibleAreaLabel(m.responsibleArea)) : "—";
+    const estado = m.status ? esc(STATUS_LABEL[m.status] ?? m.status) : "—";
+    const prioridad = m.priority ? esc(PRIORITY_LABEL[m.priority] ?? m.priority) : "—";
+    const tecnico = m.assignedTechnicianName
+      ? esc(getTechnicianNameLabel(m.assignedTechnicianName))
+      : "—";
+    const printedAt = new Date().toLocaleString("es-EC", {
+      year: "numeric",
+      month: "long",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const rows: Array<[string, string]> = [
+      ["Número de ticket", numero],
+      ["Solicitante", esc(m.userName ?? "—")],
+      ["Servicio / categoría", servicio],
+      ["Área responsable", area],
+      ["Prioridad", prioridad],
+      ["Estado actual", estado],
+      ["Técnico asignado", tecnico],
+      ["Fecha de creación", esc(formatDate(m.createdAt))],
+      ["Fecha de aceptación", esc(formatDate(m.acceptedAt))],
+      ["Fecha de resolución", esc(formatDate(m.resolvedAt))],
+    ];
+    if (m.resolvedByName) rows.push(["Resuelto por", esc(getTechnicianNameLabel(m.resolvedByName))]);
+    if (m.resolutionSummary) rows.push(["Resumen de resolución", esc(m.resolutionSummary)]);
+
+    const dataRows = rows
+      .map(
+        ([k, v]) =>
+          `<tr><th>${k}</th><td>${v}</td></tr>`
+      )
+      .join("");
+
+    const eventsHtml =
+      events.length === 0
+        ? `<p class="empty">No hay eventos registrados para este ticket.</p>`
+        : events
+            .map((e, i) => {
+              const parts: string[] = [];
+              parts.push(
+                `<div class="ev-head"><span class="ev-action">${esc(e.actionType)}</span><span class="ev-date">${esc(
+                  formatDate(e.createdAt)
+                )}</span></div>`
+              );
+              parts.push(`<p class="ev-desc">${esc(e.description)}</p>`);
+              parts.push(
+                `<p class="ev-by">Responsable: <strong>${esc(
+                  getTechnicianNameLabel(e.performedBy?.name)
+                )}</strong></p>`
+              );
+              if (e.previousStatus && e.newStatus && e.previousStatus !== e.newStatus) {
+                parts.push(
+                  `<p class="ev-meta">Estado: ${esc(
+                    STATUS_LABEL[e.previousStatus] ?? e.previousStatus
+                  )} → ${esc(STATUS_LABEL[e.newStatus] ?? e.newStatus)}</p>`
+                );
+              }
+              if (e.previousArea && e.newArea && e.previousArea !== e.newArea) {
+                parts.push(
+                  `<p class="ev-meta">Área: ${esc(getResponsibleAreaLabel(e.previousArea))} → ${esc(
+                    getResponsibleAreaLabel(e.newArea)
+                  )}</p>`
+                );
+              }
+              if (e.reason) parts.push(`<p class="ev-meta">Motivo: ${esc(e.reason)}</p>`);
+              if (e.workDone) parts.push(`<p class="ev-meta">Trabajo realizado: ${esc(e.workDone)}</p>`);
+              if (e.eventDescription)
+                parts.push(`<p class="ev-meta">${esc(e.eventDescription)}</p>`);
+              return `<li class="event"><div class="ev-num">${i + 1}</div><div class="ev-body">${parts.join(
+                ""
+              )}</div></li>`;
+            })
+            .join("");
+
+    return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Historial del Ticket ${numero}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; margin: 24px; font-size: 12px; }
+  header.doc { border-bottom: 2px solid #9c1f2c; padding-bottom: 10px; margin-bottom: 16px; }
+  .inst { font-size: 16px; font-weight: bold; color: #9c1f2c; }
+  .sys { font-size: 12px; color: #444; }
+  h1 { font-size: 18px; margin: 12px 0 4px; }
+  .printed { font-size: 11px; color: #555; }
+  table.meta { width: 100%; border-collapse: collapse; margin: 12px 0 20px; }
+  table.meta th, table.meta td { text-align: left; padding: 4px 8px; border: 1px solid #ddd; vertical-align: top; }
+  table.meta th { width: 220px; background: #f5f5f5; font-weight: 600; }
+  h2 { font-size: 14px; margin: 18px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  ul.events { list-style: none; padding: 0; margin: 0; }
+  li.event { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eee; page-break-inside: avoid; }
+  .ev-num { flex: 0 0 24px; height: 24px; width: 24px; border-radius: 50%; background: #9c1f2c; color: #fff; text-align: center; line-height: 24px; font-weight: bold; }
+  .ev-body { flex: 1; }
+  .ev-head { display: flex; justify-content: space-between; gap: 8px; }
+  .ev-action { font-weight: bold; }
+  .ev-date { color: #555; }
+  .ev-desc { margin: 4px 0; }
+  .ev-by { margin: 2px 0; color: #333; }
+  .ev-meta { margin: 2px 0; color: #444; font-style: italic; }
+  .empty { padding: 16px; text-align: center; color: #555; font-style: italic; }
+  footer.doc { margin-top: 24px; border-top: 1px solid #ccc; padding-top: 8px; font-size: 10px; color: #666; text-align: center; }
+  @media print { body { margin: 0; } @page { margin: 16mm; } }
+</style>
+</head>
+<body>
+  <header class="doc">
+    <div class="inst">Universidad Técnica de Ambato</div>
+    <div class="sys">Sistema ServiceDesk / HelpDesk</div>
+    <h1>Historial del Ticket</h1>
+    <div class="printed">Fecha de impresión: ${esc(printedAt)}</div>
+  </header>
+
+  <table class="meta">${dataRows}</table>
+
+  <h2>Eventos del ticket</h2>
+  <ul class="events">${eventsHtml}</ul>
+
+  <footer class="doc">
+    Documento generado desde el sistema ServiceDesk / HelpDesk.<br/>
+    Página impresa como evidencia de seguimiento de incidencia.
+  </footer>
+</body>
+</html>`;
+  }
+
+  function printHistory() {
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) {
+      setError("No se pudo abrir la ventana de impresión. Revisa el bloqueador de ventanas emergentes.");
+      return;
+    }
+    win.document.open();
+    win.document.write(buildPrintHtml());
+    win.document.close();
+    win.focus();
+    // Esperamos a que el contenido se renderice antes de imprimir.
+    win.onload = () => {
+      win.print();
+    };
+    // Fallback por si onload no dispara (documentos escritos a veces ya están listos).
+    setTimeout(() => {
+      try {
+        win.print();
+      } catch {
+        /* la ventana pudo cerrarse manualmente */
+      }
+    }, 400);
+  }
+
+  const canPrint = !loading && !error;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -101,12 +309,23 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
       aria-modal="true"
     >
       <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl">
-        <div className="border-b border-gray-200 px-6 py-4">
-          <h2 className="text-lg font-bold text-uta-900">Historial del ticket</h2>
-          <p className="mt-1 text-xs text-gray-600">
-            <span className="font-mono font-semibold">{ticket.number}</span>
-            {ticket.serviceName ? <> · {ticket.serviceName}</> : null}
-          </p>
+        <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-6 py-4">
+          <div>
+            <h2 className="text-lg font-bold text-uta-900">Historial del ticket</h2>
+            <p className="mt-1 text-xs text-gray-600">
+              <span className="font-mono font-semibold">{ticket.number}</span>
+              {ticket.serviceName ? <> · {ticket.serviceName}</> : null}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={printHistory}
+            disabled={!canPrint}
+            title="Abrir vista imprimible del historial"
+            className="inline-flex items-center gap-1.5 rounded border border-uta-700 bg-white px-3 py-1.5 text-sm font-semibold text-uta-700 hover:bg-uta-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span aria-hidden>🖨</span> Imprimir historial
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -120,7 +339,7 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
           )}
           {!loading && !error && events.length === 0 && (
             <p className="py-6 text-center text-sm text-gray-500">
-              No hay acciones registradas para este ticket.
+              No hay eventos registrados para este ticket.
             </p>
           )}
           {!loading && !error && events.length > 0 && (
@@ -150,7 +369,7 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
                       </div>
                       <p className="text-sm text-gray-800">{e.description}</p>
                       <p className="mt-1 text-xs text-gray-500">
-                        por <strong>{e.performedBy.name}</strong>
+                        por <strong>{getTechnicianNameLabel(e.performedBy.name)}</strong>
                       </p>
                       {e.reason && (
                         <p className="mt-2 rounded bg-gray-50 px-2 py-1 text-xs italic text-gray-700">

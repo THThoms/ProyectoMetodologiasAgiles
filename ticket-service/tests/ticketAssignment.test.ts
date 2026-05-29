@@ -52,6 +52,7 @@ function makeToken(role: string, userId = USER_ID, name = "Test User") {
 function mockTicket(overrides: Partial<{
   status: string;
   responsibleArea: string;
+  assignmentStatus: string;
   assignedTechnicianId: string | null;
   userId: string;
   levelAssigned: string;
@@ -68,7 +69,7 @@ function mockTicket(overrides: Partial<{
     status: overrides.status ?? "abierto",
     priority: "media",
     responsibleArea: overrides.responsibleArea ?? "TECHNICIANS",
-    assignmentStatus: "available",
+    assignmentStatus: overrides.assignmentStatus ?? "available",
     assignedTechnicianId: overrides.assignedTechnicianId ?? null,
     assignedTechnicianName: null,
     acceptedAt: null,
@@ -129,10 +130,13 @@ describe("GET /tickets/available", () => {
     expect(res.status).toBe(200);
     expect(res.body.areas).toEqual(expect.arrayContaining(["TECHNICIANS", "GENERAL"]));
     const call = (prisma.ticket.findMany as jest.Mock).mock.calls[0][0];
+    expect(call.where.assignmentStatus).toBe("available");
     expect(call.where.assignedTechnicianId).toBeNull();
+    expect(call.where.status).toEqual({ notIn: ["resuelto", "cerrado"] });
     expect(call.where.responsibleArea.in).toEqual(
       expect.arrayContaining(["TECHNICIANS", "GENERAL"])
     );
+    expect(call.where.responsibleArea.in).not.toContain("TICS");
   });
 
   it("tech_n3 ve áreas TICS + GENERAL (no TECHNICIANS)", async () => {
@@ -145,6 +149,8 @@ describe("GET /tickets/available", () => {
     expect(res.status).toBe(200);
     expect(res.body.areas).not.toContain("TECHNICIANS");
     expect(res.body.areas).toEqual(expect.arrayContaining(["TICS", "GENERAL"]));
+    const call = (prisma.ticket.findMany as jest.Mock).mock.calls[0][0];
+    expect(call.where.responsibleArea.in).not.toContain("TECHNICIANS");
   });
 
   it("403 si user normal", async () => {
@@ -169,6 +175,12 @@ describe("POST /tickets/:id/accept", () => {
     expect(res.status).toBe(200);
     expect(mockTicketUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({
+          assignmentStatus: "available",
+          assignedTechnicianId: null,
+          status: { notIn: ["resuelto", "cerrado"] },
+          responsibleArea: { in: ["TECHNICIANS", "GENERAL"] },
+        }),
         data: expect.objectContaining({
           assignedTechnicianId: TECH_ID,
           assignmentStatus: "accepted",
@@ -191,6 +203,37 @@ describe("POST /tickets/:id/accept", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(409);
     expect(mockTicketUpdate).not.toHaveBeenCalled();
+  });
+
+  it("409 si ya no está disponible aunque no tenga técnico asignado", async () => {
+    mockTicket({ assignmentStatus: "assigned_by_admin", assignedTechnicianId: null });
+    const token = makeToken("tech_n1", TECH_ID);
+    const res = await request(app)
+      .post(`/tickets/${TICKET_ID}/accept`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(409);
+    expect(mockTicketUpdate).not.toHaveBeenCalled();
+  });
+
+  it("tech_n3 acepta ticket del área TICS", async () => {
+    mockTicket({ responsibleArea: "TICS" });
+    const token = makeToken("tech_n3", TECH_ID, "Tec TICs");
+    const res = await request(app)
+      .post(`/tickets/${TICKET_ID}/accept`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(mockTicketUpdate).toHaveBeenCalled();
+  });
+
+  it("409 si otro técnico toma el ticket durante la aceptación", async () => {
+    mockTicket({ responsibleArea: "TECHNICIANS" });
+    mockTicketUpdate.mockRejectedValueOnce({ code: "P2025" });
+    const token = makeToken("tech_n1", TECH_ID);
+    const res = await request(app)
+      .post(`/tickets/${TICKET_ID}/accept`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(409);
+    expect(mockEventCreate).not.toHaveBeenCalled();
   });
 
   it("403 si la categoría está fuera del área del técnico", async () => {
@@ -490,6 +533,26 @@ describe("PUT /tickets/:id/escalate", () => {
     expect(res.status).toBe(400);
   });
 
+  it("400 si falta reason", async () => {
+    mockTicket({ assignedTechnicianId: TECH_ID });
+    const token = makeToken("tech_n1", TECH_ID);
+    const res = await request(app)
+      .put(`/tickets/${TICKET_ID}/escalate`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ workDone: "trabajo previo", targetArea: "TICS" });
+    expect(res.status).toBe(400);
+  });
+
+  it("400 si el área destino no es válida", async () => {
+    mockTicket({ assignedTechnicianId: TECH_ID });
+    const token = makeToken("tech_n1", TECH_ID);
+    const res = await request(app)
+      .put(`/tickets/${TICKET_ID}/escalate`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ reason: "motivo valido", workDone: "trabajo previo", targetArea: "OTRA" });
+    expect(res.status).toBe(400);
+  });
+
   it("403 si tech no asignado", async () => {
     mockTicket({ assignedTechnicianId: "otro" });
     const token = makeToken("tech_n1", TECH_ID);
@@ -508,6 +571,29 @@ describe("PUT /tickets/:id/escalate", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ reason: "motivo valido", workDone: "trabajo previo" });
     expect(res.status).toBe(409);
+  });
+
+  it("admin puede derivar un ticket a otra área", async () => {
+    mockTicket({ assignedTechnicianId: TECH_ID, responsibleArea: "TICS" });
+    const token = makeToken("admin", USER_ID, "Administrador");
+    const res = await request(app)
+      .put(`/tickets/${TICKET_ID}/escalate`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        reason: "Redistribución administrativa",
+        workDone: "Se verificó el alcance de soporte",
+        targetArea: "TECHNICIANS",
+      });
+    expect(res.status).toBe(200);
+    expect(mockTicketUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          responsibleArea: "TECHNICIANS",
+          assignedTechnicianId: null,
+          assignmentStatus: "available",
+        }),
+      })
+    );
   });
 });
 
@@ -576,7 +662,7 @@ describe("POST /admin/tickets/:id/assign", () => {
 // GET /admin/stats/tickets
 // =============================================================================
 describe("GET /admin/stats/tickets", () => {
-  it("admin obtiene agregados", async () => {
+  it("admin obtiene agregados (sin fechas) y comportamiento general", async () => {
     (prisma.ticket.count as jest.Mock).mockResolvedValue(0);
     (prisma.ticket.groupBy as jest.Mock).mockResolvedValue([]);
     const token = makeToken("admin");
@@ -589,6 +675,14 @@ describe("GET /admin/stats/tickets", () => {
     expect(res.body).toHaveProperty("byResponsibleArea");
     expect(res.body).toHaveProperty("byPriority");
     expect(res.body).toHaveProperty("byTechnician");
+    expect(res.body).toHaveProperty("resolvedByTechnician");
+    expect(res.body).toHaveProperty("createdByDay");
+    expect(res.body).toHaveProperty("avgAcceptSeconds");
+    expect(res.body).toHaveProperty("avgResolveSeconds");
+    // HU-12: filters presente, sin rango.
+    expect(res.body.filters).toEqual({ dateFrom: null, dateTo: null });
+    // El primer count (totalAll) ahora recibe where vacío (sin rango).
+    expect(prisma.ticket.count).toHaveBeenCalledWith({ where: {} });
   });
 
   it("403 si no es admin", async () => {
@@ -597,5 +691,98 @@ describe("GET /admin/stats/tickets", () => {
       .get("/admin/stats/tickets")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
+  });
+
+  it("401 sin JWT", async () => {
+    const res = await request(app).get("/admin/stats/tickets");
+    expect(res.status).toBe(401);
+  });
+
+  // ---- HU-12: filtros por fecha ----
+  it("dateFrom filtra desde el inicio de ese día (gte)", async () => {
+    (prisma.ticket.count as jest.Mock).mockResolvedValue(0);
+    (prisma.ticket.groupBy as jest.Mock).mockResolvedValue([]);
+    const token = makeToken("admin");
+    const res = await request(app)
+      .get("/admin/stats/tickets?dateFrom=2026-05-01")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.filters).toEqual({ dateFrom: "2026-05-01", dateTo: null });
+    expect(prisma.ticket.count).toHaveBeenCalledWith({
+      where: { createdAt: { gte: new Date("2026-05-01T00:00:00.000Z") } },
+    });
+  });
+
+  it("dateTo filtra hasta el final de ese día (lte)", async () => {
+    (prisma.ticket.count as jest.Mock).mockResolvedValue(0);
+    (prisma.ticket.groupBy as jest.Mock).mockResolvedValue([]);
+    const token = makeToken("admin");
+    const res = await request(app)
+      .get("/admin/stats/tickets?dateTo=2026-05-31")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.filters).toEqual({ dateFrom: null, dateTo: "2026-05-31" });
+    expect(prisma.ticket.count).toHaveBeenCalledWith({
+      where: { createdAt: { lte: new Date("2026-05-31T23:59:59.999Z") } },
+    });
+  });
+
+  it("dateFrom + dateTo filtra el rango (gte/lte) y se aplica a groupBy", async () => {
+    (prisma.ticket.count as jest.Mock).mockResolvedValue(0);
+    (prisma.ticket.groupBy as jest.Mock).mockResolvedValue([]);
+    const token = makeToken("admin");
+    const res = await request(app)
+      .get("/admin/stats/tickets?dateFrom=2026-05-01&dateTo=2026-05-31")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.filters).toEqual({ dateFrom: "2026-05-01", dateTo: "2026-05-31" });
+    const expectedRange = {
+      gte: new Date("2026-05-01T00:00:00.000Z"),
+      lte: new Date("2026-05-31T23:59:59.999Z"),
+    };
+    expect(prisma.ticket.count).toHaveBeenCalledWith({ where: { createdAt: expectedRange } });
+    // groupBy por servicio también lleva el rango.
+    expect(prisma.ticket.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { createdAt: expectedRange } })
+    );
+  });
+
+  it("400 si dateFrom > dateTo", async () => {
+    const token = makeToken("admin");
+    const res = await request(app)
+      .get("/admin/stats/tickets?dateFrom=2026-06-01&dateTo=2026-05-01")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/posterior/i);
+  });
+
+  it("400 si dateFrom tiene formato inválido", async () => {
+    const token = makeToken("admin");
+    const res = await request(app)
+      .get("/admin/stats/tickets?dateFrom=01-05-2026")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(400);
+  });
+
+  it("400 si dateTo es una fecha calendario imposible", async () => {
+    const token = makeToken("admin");
+    const res = await request(app)
+      .get("/admin/stats/tickets?dateTo=2026-13-40")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(400);
+  });
+
+  it("rango sin tickets devuelve totales en cero y arrays vacíos", async () => {
+    (prisma.ticket.count as jest.Mock).mockResolvedValue(0);
+    (prisma.ticket.groupBy as jest.Mock).mockResolvedValue([]);
+    const token = makeToken("admin");
+    const res = await request(app)
+      .get("/admin/stats/tickets?dateFrom=2000-01-01&dateTo=2000-01-02")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.totals.tickets).toBe(0);
+    expect(res.body.byService).toEqual([]);
+    expect(res.body.byPriority).toEqual([]);
+    expect(res.body.byTechnician).toEqual([]);
   });
 });

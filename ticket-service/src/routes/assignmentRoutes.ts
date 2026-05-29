@@ -85,6 +85,7 @@ router.get("/available", verifyJwt, async (req: Request, res: Response) => {
   }
 
   const where: Prisma.TicketWhereInput = {
+    assignmentStatus: "available",
     assignedTechnicianId: null,
     responsibleArea: { in: areas },
     status: { notIn: ["resuelto", "cerrado"] },
@@ -126,6 +127,9 @@ router.post("/:id/accept", verifyJwt, async (req: Request, res: Response) => {
       .status(409)
       .json({ error: "El ticket ya fue aceptado por otro técnico" });
   }
+  if (ticket.assignmentStatus !== "available") {
+    return res.status(409).json({ error: "El ticket no está disponible para aceptación" });
+  }
   if (ticket.status === "resuelto" || ticket.status === "cerrado") {
     return res
       .status(409)
@@ -136,11 +140,18 @@ router.post("/:id/accept", verifyJwt, async (req: Request, res: Response) => {
       error: `Tu rol no puede atender tickets del área ${ticket.responsibleArea}`,
     });
   }
+  const allowedAreas = areasForRole(role);
 
   try {
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.ticket.update({
-        where: { id: req.params.id },
+        where: {
+          id: req.params.id,
+          assignmentStatus: "available",
+          assignedTechnicianId: null,
+          status: { notIn: ["resuelto", "cerrado"] },
+          responsibleArea: { in: allowedAreas },
+        },
         data: {
           assignedTechnicianId: req.user!.userId,
           assignedTechnicianName: req.user!.name,
@@ -163,6 +174,14 @@ router.post("/:id/accept", verifyJwt, async (req: Request, res: Response) => {
     });
     return res.json({ message: "Ticket aceptado correctamente", ticket: updated });
   } catch (err) {
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      err.code === "P2025"
+    ) {
+      return res.status(409).json({ error: "El ticket ya no está disponible para aceptación" });
+    }
     console.error("[accept] error:", err);
     return res.status(500).json({ error: "Error interno al aceptar el ticket" });
   }

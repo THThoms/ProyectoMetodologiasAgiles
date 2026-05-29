@@ -110,8 +110,74 @@ router.post("/tickets/:id/assign", verifyJwt, requireAdmin, async (req: Request,
 
 // ---------------------------------------------------------------------------
 // GET /admin/stats/tickets -> Agregados para el dashboard de estadísticas.
+//
+// HU-12: filtro por rango de fechas (inclusivo) sobre `createdAt`.
+//   Query: dateFrom=YYYY-MM-DD, dateTo=YYYY-MM-DD (ambos opcionales).
+//   - dateFrom -> inicio del día (00:00:00.000Z).
+//   - dateTo   -> fin del día (23:59:59.999Z).
+//   - Sin fechas: comportamiento general (todos los tickets).
+//
+// Cohorte: TODOS los agregados (KPIs, estados, prioridad, área, servicio,
+// técnico, resueltos por técnico, createdByDay y ambos promedios) se calculan
+// sobre los tickets cuyo `createdAt` cae dentro del rango. Es decir: "de los
+// tickets creados en este período, cómo se distribuyen / cuánto tardaron".
 // ---------------------------------------------------------------------------
-router.get("/stats/tickets", verifyJwt, requireAdmin, async (_req: Request, res: Response) => {
+const dateOnly = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "La fecha debe tener formato YYYY-MM-DD");
+
+const statsQuerySchema = z.object({
+  dateFrom: dateOnly.optional(),
+  dateTo: dateOnly.optional(),
+});
+
+function parseDayStart(s: string): Date | null {
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return isNaN(d.getTime()) ? null : d;
+}
+function parseDayEnd(s: string): Date | null {
+  const d = new Date(`${s}T23:59:59.999Z`);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+router.get("/stats/tickets", verifyJwt, requireAdmin, async (req: Request, res: Response) => {
+  const parsed = statsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Filtros de fecha inválidos", details: parsed.error.issues });
+  }
+  const { dateFrom, dateTo } = parsed.data;
+
+  const from = dateFrom ? parseDayStart(dateFrom) : null;
+  const to = dateTo ? parseDayEnd(dateTo) : null;
+  if (dateFrom && !from) {
+    return res.status(400).json({ error: "dateFrom no es una fecha válida" });
+  }
+  if (dateTo && !to) {
+    return res.status(400).json({ error: "dateTo no es una fecha válida" });
+  }
+  if (from && to && from.getTime() > to.getTime()) {
+    return res
+      .status(400)
+      .json({ error: "dateFrom no puede ser posterior a dateTo" });
+  }
+
+  // Filtro Prisma sobre createdAt (inclusivo en ambos extremos).
+  const createdAtFilter: Prisma.DateTimeFilter | undefined =
+    from || to ? { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } : undefined;
+  const rangeWhere: Prisma.TicketWhereInput = createdAtFilter
+    ? { createdAt: createdAtFilter }
+    : {};
+
+  // Predicado SQL equivalente para las consultas crudas. Las fechas se inyectan
+  // como literales ISO derivados de objetos Date validados (solo dígitos y
+  // [-:.TZ]), por lo que no hay riesgo de inyección.
+  const sqlClauses: string[] = [];
+  if (from) sqlClauses.push(`created_at >= '${from.toISOString()}'`);
+  if (to) sqlClauses.push(`created_at <= '${to.toISOString()}'`);
+  const rangeSql = sqlClauses.length ? sqlClauses.join(" AND ") : "";
+  const andRange = (base: string) =>
+    rangeSql ? `${base} AND ${rangeSql}` : base;
+
   const [
     totalAll,
     pending,
@@ -126,31 +192,36 @@ router.get("/stats/tickets", verifyJwt, requireAdmin, async (_req: Request, res:
     byPriority,
     byTechnicianGroups,
   ] = await Promise.all([
-    prisma.ticket.count(),
-    prisma.ticket.count({ where: { status: "abierto" } }),
-    prisma.ticket.count({ where: { status: "en_proceso" } }),
-    prisma.ticket.count({ where: { status: "escalado" } }),
-    prisma.ticket.count({ where: { status: "resuelto" } }),
-    prisma.ticket.count({ where: { status: "cerrado" } }),
-    prisma.ticket.count({ where: { assignmentStatus: "accepted" } }),
-    prisma.ticket.count({ where: { assignedTechnicianId: null, status: { notIn: ["resuelto", "cerrado"] } } }),
+    prisma.ticket.count({ where: rangeWhere }),
+    prisma.ticket.count({ where: { ...rangeWhere, status: "abierto" } }),
+    prisma.ticket.count({ where: { ...rangeWhere, status: "en_proceso" } }),
+    prisma.ticket.count({ where: { ...rangeWhere, status: "escalado" } }),
+    prisma.ticket.count({ where: { ...rangeWhere, status: "resuelto" } }),
+    prisma.ticket.count({ where: { ...rangeWhere, status: "cerrado" } }),
+    prisma.ticket.count({ where: { ...rangeWhere, assignmentStatus: "accepted" } }),
+    prisma.ticket.count({
+      where: { ...rangeWhere, assignedTechnicianId: null, status: { notIn: ["resuelto", "cerrado"] } },
+    }),
     prisma.ticket.groupBy({
       by: ["serviceName"],
       _count: { _all: true },
+      where: rangeWhere,
       orderBy: { _count: { serviceName: "desc" } },
     }),
     prisma.ticket.groupBy({
       by: ["responsibleArea"],
       _count: { _all: true },
+      where: rangeWhere,
     }),
     prisma.ticket.groupBy({
       by: ["priority"],
       _count: { _all: true },
+      where: rangeWhere,
     }),
     prisma.ticket.groupBy({
       by: ["assignedTechnicianId", "assignedTechnicianName"],
       _count: { _all: true },
-      where: { assignedTechnicianId: { not: null } },
+      where: { ...rangeWhere, assignedTechnicianId: { not: null } },
       orderBy: { _count: { assignedTechnicianId: "desc" } },
     }),
   ]);
@@ -166,14 +237,14 @@ router.get("/stats/tickets", verifyJwt, requireAdmin, async (_req: Request, res:
   try {
     const accRaw = await prisma.$queryRawUnsafe<Array<{ avg_secs: number | null }>>(
       `SELECT EXTRACT(EPOCH FROM AVG(accepted_at - created_at)) AS avg_secs
-       FROM tickets WHERE accepted_at IS NOT NULL`
+       FROM tickets WHERE ${andRange("accepted_at IS NOT NULL")}`
     );
     avgAcceptSeconds = accRaw?.[0]?.avg_secs ?? null;
     if (avgAcceptSeconds != null) avgAcceptSeconds = Math.round(avgAcceptSeconds);
 
     const resRaw = await prisma.$queryRawUnsafe<Array<{ avg_secs: number | null }>>(
       `SELECT EXTRACT(EPOCH FROM AVG(resolved_at - created_at)) AS avg_secs
-       FROM tickets WHERE resolved_at IS NOT NULL`
+       FROM tickets WHERE ${andRange("resolved_at IS NOT NULL")}`
     );
     avgResolveSeconds = resRaw?.[0]?.avg_secs ?? null;
     if (avgResolveSeconds != null) avgResolveSeconds = Math.round(avgResolveSeconds);
@@ -184,7 +255,7 @@ router.get("/stats/tickets", verifyJwt, requireAdmin, async (_req: Request, res:
       `SELECT resolved_by_id AS technician_id, resolved_by_name AS technician_name,
               COUNT(*)::bigint AS count
        FROM tickets
-       WHERE resolved_by_id IS NOT NULL
+       WHERE ${andRange("resolved_by_id IS NOT NULL")}
        GROUP BY resolved_by_id, resolved_by_name
        ORDER BY count DESC
        LIMIT 20`
@@ -195,11 +266,13 @@ router.get("/stats/tickets", verifyJwt, requireAdmin, async (_req: Request, res:
       count: Number(r.count),
     }));
 
-    // Serie temporal: tickets creados por día durante los últimos 30 días.
+    // Serie temporal: tickets creados por día. Con rango usa el rango; sin
+    // rango mantiene el comportamiento histórico (últimos 30 días).
+    const seriesWhere = rangeSql ? rangeSql : `created_at >= NOW() - INTERVAL '30 days'`;
     const seriesRaw = await prisma.$queryRawUnsafe<Array<{ day: Date; count: bigint }>>(
       `SELECT date_trunc('day', created_at)::date AS day, COUNT(*)::bigint AS count
        FROM tickets
-       WHERE created_at >= NOW() - INTERVAL '30 days'
+       WHERE ${seriesWhere}
        GROUP BY day
        ORDER BY day ASC`
     );
@@ -212,6 +285,10 @@ router.get("/stats/tickets", verifyJwt, requireAdmin, async (_req: Request, res:
   }
 
   return res.json({
+    filters: {
+      dateFrom: dateFrom ?? null,
+      dateTo: dateTo ?? null,
+    },
     totals: {
       tickets: totalAll,
       pending,
