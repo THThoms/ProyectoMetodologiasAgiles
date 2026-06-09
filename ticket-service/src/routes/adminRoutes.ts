@@ -13,6 +13,12 @@ import { verifyJwt } from "../middleware/verifyJwt";
 import { recordTicketEvent } from "../services/historyService";
 import { fetchUsersByIds, fetchTechnicians } from "../services/authClient";
 import { areasForRole, canHandleArea } from "../services/areaService";
+// HU-15: notificaciones + administración del outbox.
+import {
+  notifyTicketAssigned,
+  dispatchInBackground,
+  processPendingEmails,
+} from "../services/emailOutboxService";
 
 const router = Router();
 
@@ -69,7 +75,7 @@ router.post("/tickets/:id/assign", verifyJwt, requireAdmin, async (req: Request,
   }
 
   try {
-    const updated = await prisma.$transaction(async (tx) => {
+    const { updated, outboxId } = await prisma.$transaction(async (tx) => {
       const u = await tx.ticket.update({
         where: { id: req.params.id },
         data: {
@@ -93,8 +99,25 @@ router.post("/tickets/:id/assign", verifyJwt, requireAdmin, async (req: Request,
         performedBy: req.user!.userId,
         performedByName: req.user!.name,
       });
-      return u;
+      // HU-15: notificar al solicitante. Solo enviamos la nota si es texto seguro
+      // (el admin la escribió en `note` libremente; no contiene secretos del sistema).
+      const outboxId = await notifyTicketAssigned({
+        client: tx,
+        ticketId: u.id,
+        to: ticket.userEmail,
+        ctx: {
+          number: u.number,
+          userName: ticket.userName,
+          serviceName: ticket.serviceName,
+          status: u.status,
+          technicianName: u.assignedTechnicianName,
+          eventDate: u.acceptedAt,
+          note: note ?? null,
+        },
+      });
+      return { updated: u, outboxId };
     });
+    dispatchInBackground(outboxId);
     return res.json({
       message: "Ticket asignado correctamente",
       ticket: updated,
@@ -437,6 +460,64 @@ router.get("/tickets/history", verifyJwt, requireAdmin, async (req: Request, res
       to: to ?? null,
     },
   });
+});
+
+// ---------------------------------------------------------------------------
+// HU-15 - Email Outbox admin
+//
+// GET  /admin/email-outbox          -> lista resumida (sin htmlBody) con filtros.
+// POST /admin/email-outbox/process  -> dispara reintentos de pending/failed.
+// ---------------------------------------------------------------------------
+const outboxQuerySchema = z.object({
+  status: z.enum(["pending", "sent", "failed"]).optional(),
+  eventType: z.string().trim().min(1).max(64).optional(),
+  ticketId: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+router.get("/email-outbox", verifyJwt, requireAdmin, async (req: Request, res: Response) => {
+  const parsed = outboxQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Filtros inválidos", details: parsed.error.issues });
+  }
+  const { status, eventType, ticketId, limit } = parsed.data;
+  const where: Prisma.EmailOutboxWhereInput = {};
+  if (status) where.status = status;
+  if (eventType) where.eventType = eventType;
+  if (ticketId) where.ticketId = ticketId;
+
+  const rows = await prisma.emailOutbox.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: limit ?? 50,
+    // NO devolvemos htmlBody ni textBody por defecto (pesa y puede tener detalles del ticket).
+    select: {
+      id: true,
+      ticketId: true,
+      to: true,
+      subject: true,
+      eventType: true,
+      status: true,
+      attempts: true,
+      lastError: true,
+      sentAt: true,
+      createdAt: true,
+    },
+  });
+  return res.json({ outbox: rows, total: rows.length });
+});
+
+const processSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+router.post("/email-outbox/process", verifyJwt, requireAdmin, async (req: Request, res: Response) => {
+  const parsed = processSchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Parámetros inválidos", details: parsed.error.issues });
+  }
+  const summary = await processPendingEmails(parsed.data.limit ?? 50);
+  return res.json({ message: "Procesamiento de outbox completado", ...summary });
 });
 
 export default router;

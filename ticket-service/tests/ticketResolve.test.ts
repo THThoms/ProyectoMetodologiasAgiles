@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 
 const mockTicketUpdate = jest.fn();
 const mockEventCreate = jest.fn();
+const mockOutboxCreate = jest.fn().mockResolvedValue({ id: "outbox-resolve" });
 
 jest.mock("../src/db/client", () => ({
   prisma: {
@@ -15,8 +16,18 @@ jest.mock("../src/db/client", () => ({
       update: jest.fn(),
     },
     ticketEvent: { create: jest.fn() },
+    emailOutbox: {
+      create: (...a: unknown[]) => mockOutboxCreate(...a),
+      findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ id: "outbox-resolve" }),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     $transaction: jest.fn((fn) =>
-      fn({ ticket: { update: mockTicketUpdate }, ticketEvent: { create: mockEventCreate } })
+      fn({
+        ticket: { update: mockTicketUpdate },
+        ticketEvent: { create: mockEventCreate },
+        emailOutbox: { create: mockOutboxCreate },
+      })
     ),
   },
 }));
@@ -103,8 +114,14 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockTicketUpdate.mockReset();
   mockEventCreate.mockReset();
+  mockOutboxCreate.mockReset();
+  mockOutboxCreate.mockResolvedValue({ id: "outbox-resolve" });
   (prisma.$transaction as jest.Mock).mockImplementation((fn) =>
-    fn({ ticket: { update: mockTicketUpdate }, ticketEvent: { create: mockEventCreate } })
+    fn({
+      ticket: { update: mockTicketUpdate },
+      ticketEvent: { create: mockEventCreate },
+      emailOutbox: { create: mockOutboxCreate },
+    })
   );
 });
 

@@ -20,6 +20,7 @@ RUN apk add --no-cache openssl wget
 
 COPY package*.json ./
 COPY prisma ./prisma
+COPY scripts ./scripts
 RUN npm install --omit=dev
 RUN npx prisma generate
 

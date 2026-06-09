@@ -85,7 +85,7 @@ El Sprint 1 usa **autenticación con dos métodos independientes**:
 2. Ingresa el correo y contraseña de un usuario sembrado:
    - `admin@uta.edu.ec` / `admin123` → `/admin/catalogo`
    - `docente@uta.edu.ec` / `docente123` → `/tickets/nuevo`
-   - `tecn1@uta.edu.ec` / `tecn1123` → `/tickets/nuevo`
+   - `carlos.mena@uta.edu.ec` / `tecn1123` → `/tickets/nuevo`
 3. Pulsa **Iniciar sesión** → entras directo al dashboard. **NO se pide Microsoft.**
 
 ### Método 2 — Login simulado Microsoft Office 365
@@ -170,10 +170,11 @@ servicedesk/
 | Email                    | Rol       | Pantalla inicial    |
 |--------------------------|-----------|---------------------|
 | `admin@uta.edu.ec`       | `admin`   | /admin/catalogo     |
-| `tecn1@uta.edu.ec`       | `tech_n1` | /tickets/nuevo *    |
-| `tecn2@uta.edu.ec`       | `tech_n2` | /tickets/nuevo *    |
-| `tecn3@uta.edu.ec`       | `tech_n3` | /tickets/nuevo *    |
-| `tecn4@uta.edu.ec`       | `tech_n4` | /tickets/nuevo *    |
+| `carlos.mena@uta.edu.ec`     | `tech_n1` | /tickets/nuevo *    |
+| `daniela.paredes@uta.edu.ec` | `tech_n2` | /tickets/nuevo *    |
+| `andres.salazar@uta.edu.ec`  | `tech_n3` | /tickets/nuevo *    |
+| `valeria.nunez@uta.edu.ec`   | `tech_n4` | /tickets/nuevo *    |
+| `mateo.cordova@uta.edu.ec`   | `tech_n3` | /tickets/nuevo *    |
 | `docente@uta.edu.ec`     | `user`    | /tickets/nuevo      |
 | `estudiante@uta.edu.ec`  | `user`    | /tickets/nuevo      |
 

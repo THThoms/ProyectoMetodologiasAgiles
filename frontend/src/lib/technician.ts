@@ -3,11 +3,10 @@
 // El flujo del Sprint 2 modificado funciona por ÁREA RESPONSABLE; los niveles
 // N1-N4 y los roles internos (`tech_n1..n4`) son detalle de implementación y
 // NUNCA deben aparecer en pantalla. El backend sigue usándolos para mapear
-// rol → áreas (areaService.ts), pero el cliente solo muestra "Técnico" + área.
+// rol → áreas (areaService.ts), pero el cliente muestra identidad + área.
 //
 // Reglas de visualización:
-//   1. El "nombre" visible base es siempre la palabra "Técnico" (no usar
-//      technician.name porque el seed lo trae con "Nivel/Básico/DITIC/Esp.").
+//   1. Mostrar el nombre personal del técnico; "Técnico" queda como fallback.
 //   2. El área sale de `technician.areas[]`:
 //        TECHNICIANS -> "Técnicos"
 //        TICS        -> "TICs"
@@ -44,7 +43,6 @@ export function getTechnicianNameLabel(name: string | null | undefined): string 
 }
 
 export function getAccountNameLabel(user: { name?: string; role?: string } | null | undefined): string {
-  if (user?.role?.startsWith("tech_")) return "Técnico";
   return user?.name ?? "";
 }
 
@@ -58,17 +56,17 @@ export function getTechnicianAreaLabel(technician: TechnicianRef): string {
 
 /**
  * Etiqueta para mostrar en selects/dropdowns. Formato:
- *   "Técnico — <área>"                        (sin email)
- *   "Técnico — <área> — <email>"              (con email para desambiguar)
+ *   "<nombre> — <área>"                        (sin email)
+ *   "<nombre> — <área> — <email>"              (con email para desambiguar)
  *
- * Nunca expone technician.role ni el technician.name crudo del seed.
+ * Nunca expone technician.role.
  */
 export function getTechnicianDisplayLabel(
   technician: TechnicianRef,
   options: { includeEmail?: boolean } = { includeEmail: true }
 ): string {
   const area = getTechnicianAreaLabel(technician);
-  const base = `Técnico — ${area}`;
+  const base = `${getTechnicianNameLabel(technician.name)} — ${area}`;
   if (options.includeEmail && technician.email) {
     return `${base} — ${technician.email}`;
   }

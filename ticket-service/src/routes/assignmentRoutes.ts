@@ -25,6 +25,14 @@ import {
   KnowledgeNotFoundError,
   KnowledgeServiceError,
 } from "../services/knowledgeClient";
+// HU-15: notificaciones por correo (best-effort, no rompen la acción del ticket).
+import {
+  notifyTicketAccepted,
+  notifyTicketContribution,
+  notifyTicketEscalated,
+  notifyTicketResolved,
+  dispatchInBackground,
+} from "../services/emailOutboxService";
 
 const router = Router();
 
@@ -143,7 +151,7 @@ router.post("/:id/accept", verifyJwt, async (req: Request, res: Response) => {
   const allowedAreas = areasForRole(role);
 
   try {
-    const updated = await prisma.$transaction(async (tx) => {
+    const { updated, outboxId } = await prisma.$transaction(async (tx) => {
       const u = await tx.ticket.update({
         where: {
           id: req.params.id,
@@ -170,8 +178,24 @@ router.post("/:id/accept", verifyJwt, async (req: Request, res: Response) => {
         performedBy: req.user!.userId,
         performedByName: req.user!.name,
       });
-      return u;
+      // HU-15: outbox best-effort dentro de la transacción.
+      const outboxId = await notifyTicketAccepted({
+        client: tx,
+        ticketId: u.id,
+        to: ticket.userEmail,
+        ctx: {
+          number: u.number,
+          userName: ticket.userName,
+          serviceName: ticket.serviceName,
+          status: u.status,
+          technicianName: u.assignedTechnicianName,
+          eventDate: u.acceptedAt,
+        },
+      });
+      return { updated: u, outboxId };
     });
+    // HU-15: dispatch FUERA de la transacción; no bloquea ni revierte.
+    dispatchInBackground(outboxId);
     return res.json({ message: "Ticket aceptado correctamente", ticket: updated });
   } catch (err) {
     if (
@@ -338,15 +362,32 @@ router.post("/:id/contributions", verifyJwt, async (req: Request, res: Response)
       .json({ error: "Solo puedes aportar a tickets asignados a ti" });
   }
 
+  const effectiveVisibility = visibility ?? "public";
   await recordTicketEvent(prisma, {
     ticketId: req.params.id,
     action: "CONTRIBUTED",
     title: "Aportación del técnico",
     description,
-    visibility: visibility ?? "public",
+    visibility: effectiveVisibility,
     performedBy: req.user!.userId,
     performedByName: req.user!.name,
   });
+
+  // HU-15: solo aportaciones públicas notifican al solicitante.
+  const contribOutbox = await notifyTicketContribution({
+    client: prisma,
+    ticketId: req.params.id,
+    to: ticket.userEmail,
+    visibility: effectiveVisibility,
+    ctx: {
+      number: ticket.number,
+      userName: ticket.userName,
+      serviceName: ticket.serviceName,
+      contributionDescription: description,
+      eventDate: new Date(),
+    },
+  });
+  dispatchInBackground(contribOutbox);
 
   return res.status(201).json({ message: "Aportación registrada" });
 });
@@ -403,7 +444,7 @@ router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
   const areaChanged = newArea !== ticket.responsibleArea;
 
   try {
-    const updated = await prisma.$transaction(async (tx) => {
+    const { updated, outboxId } = await prisma.$transaction(async (tx) => {
       const u = await tx.ticket.update({
         where: { id: req.params.id },
         data: {
@@ -438,8 +479,24 @@ router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
         performedBy: req.user!.userId,
         performedByName: req.user!.name,
       });
-      return u;
+      // HU-15: notificar al solicitante (motivo público).
+      const outboxId = await notifyTicketEscalated({
+        client: tx,
+        ticketId: u.id,
+        to: ticket.userEmail,
+        ctx: {
+          number: u.number,
+          userName: ticket.userName,
+          serviceName: ticket.serviceName,
+          status: u.status,
+          newArea,
+          note: reason,
+          eventDate: new Date(),
+        },
+      });
+      return { updated: u, outboxId };
     });
+    dispatchInBackground(outboxId);
     return res.json({
       message: "Ticket escalado correctamente",
       ticket: {
@@ -586,7 +643,7 @@ router.post("/:id/resolve", verifyJwt, async (req: Request, res: Response) => {
 
   // 2) Actualizar el ticket y registrar evento en una transacción atómica.
   try {
-    const updated = await prisma.$transaction(async (tx) => {
+    const { updated, outboxId } = await prisma.$transaction(async (tx) => {
       const u = await tx.ticket.update({
         where: { id: req.params.id },
         data: {
@@ -614,8 +671,24 @@ router.post("/:id/resolve", verifyJwt, async (req: Request, res: Response) => {
         performedBy: req.user!.userId,
         performedByName: req.user!.name,
       });
-      return u;
+      // HU-15: notificar al solicitante. knowledgeTitle es público (viene de KB).
+      const outboxId = await notifyTicketResolved({
+        client: tx,
+        ticketId: u.id,
+        to: ticket.userEmail,
+        ctx: {
+          number: u.number,
+          userName: ticket.userName,
+          serviceName: ticket.serviceName,
+          status: u.status,
+          eventDate: u.resolvedAt,
+          knowledgeTitle,
+          note: u.resolutionSummary,
+        },
+      });
+      return { updated: u, outboxId };
     });
+    dispatchInBackground(outboxId);
     return res.json({
       message: "Ticket resuelto correctamente",
       ticket: {

@@ -23,23 +23,51 @@ function hashPassword(password: string): string {
 // Microsoft (sin contraseña local). Nunca se imprimen estas contraseñas en logs
 // y siempre se almacenan hasheadas con bcrypt vía hashPassword().
 // =============================================================================
-const seedUsers: Array<{ email: string; name: string; role: Role; password: string }> = [
+type SeedUser = {
+  email: string;
+  name: string;
+  role: Role;
+  password: string;
+  legacyEmails?: string[];
+};
+
+const seedUsers: SeedUser[] = [
   { email: "admin@uta.edu.ec",       name: "Administrador UTA",          role: Role.admin,   password: "admin123" },
   { email: "msolis5357@uta.edu.ec",  name: "Tomás Solís (Admin)",        role: Role.admin,   password: "msolis123" },
-  { email: "tecn1@uta.edu.ec",       name: "Técnico Nivel 1 (Básico)",   role: Role.tech_n1, password: "tecn1123" },
-  { email: "tecn2@uta.edu.ec",       name: "Técnico Nivel 2 (Profes.)",  role: Role.tech_n2, password: "tecn2123" },
-  { email: "tecn3@uta.edu.ec",       name: "Técnico Nivel 3 (DITIC)",    role: Role.tech_n3, password: "tecn3123" },
-  { email: "tecn4@uta.edu.ec",       name: "Técnico Nivel 4 (Esp.)",     role: Role.tech_n4, password: "tecn4123" },
-  { email: "tecn5@uta.edu.ec",       name: "Tecnico TICs Adicional",      role: Role.tech_n3, password: "tecn5123" },
+  { email: "carlos.mena@uta.edu.ec",     name: "Carlos Mena",     role: Role.tech_n1, password: "tecn1123", legacyEmails: ["tecn1@uta.edu.ec"] },
+  { email: "daniela.paredes@uta.edu.ec", name: "Daniela Paredes", role: Role.tech_n2, password: "tecn2123", legacyEmails: ["tecn2@uta.edu.ec"] },
+  { email: "andres.salazar@uta.edu.ec",  name: "Andrés Salazar",  role: Role.tech_n3, password: "tecn3123", legacyEmails: ["tecn3@uta.edu.ec"] },
+  { email: "valeria.nunez@uta.edu.ec",   name: "Valeria Núñez",   role: Role.tech_n4, password: "tecn4123", legacyEmails: ["tecn4@uta.edu.ec"] },
+  { email: "mateo.cordova@uta.edu.ec",   name: "Mateo Córdova",   role: Role.tech_n3, password: "tecn5123", legacyEmails: ["tecn5@uta.edu.ec"] },
   { email: "docente@uta.edu.ec",     name: "Docente de Prueba",          role: Role.user,    password: "docente123" },
   { email: "estudiante@uta.edu.ec",  name: "Estudiante de Prueba",       role: Role.user,    password: "estudiante123" },
 ];
 
 async function main() {
   for (const u of seedUsers) {
+    let existing = await prisma.user.findUnique({ where: { email: u.email } });
+
+    // Renombra las cuentas artificiales existentes conservando su ID,
+    // sesiones y referencias históricas en otros servicios.
+    if (!existing && u.legacyEmails?.length) {
+      const legacyUser = await prisma.user.findFirst({
+        where: { email: { in: u.legacyEmails } },
+      });
+
+      if (legacyUser) {
+        existing = await prisma.user.update({
+          where: { id: legacyUser.id },
+          data: {
+            email: u.email,
+            name: u.name,
+            role: u.role,
+          },
+        });
+      }
+    }
+
     // upsert con update solo de nombre/rol; el passwordHash se actualiza solo si
     // el usuario no tenía o tenía un hash legacy (SHA-256 = 64 chars hex, no bcrypt).
-    const existing = await prisma.user.findUnique({ where: { email: u.email } });
     const needsRehash =
       !existing?.passwordHash || !existing.passwordHash.startsWith("$2");
 

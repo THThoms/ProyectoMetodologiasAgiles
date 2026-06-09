@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 
 const mockTicketUpdate = jest.fn();
 const mockEventCreate = jest.fn();
+const mockOutboxCreate = jest.fn().mockResolvedValue({ id: "outbox-1" });
 
 jest.mock("../src/db/client", () => ({
   prisma: {
@@ -19,8 +20,20 @@ jest.mock("../src/db/client", () => ({
       groupBy: jest.fn(),
     },
     ticketEvent: { create: jest.fn(), findMany: jest.fn() },
+    // HU-15: el outbox vive en este mismo cliente. Lo mockeamos para que
+    // notifyTicket* no falle. dispatchInBackground hace findUnique → null y termina.
+    emailOutbox: {
+      create: (...a: unknown[]) => mockOutboxCreate(...a),
+      findUnique: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ id: "outbox-1" }),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     $transaction: jest.fn((fn) =>
-      fn({ ticket: { update: mockTicketUpdate }, ticketEvent: { create: mockEventCreate } })
+      fn({
+        ticket: { update: mockTicketUpdate },
+        ticketEvent: { create: mockEventCreate },
+        emailOutbox: { create: mockOutboxCreate },
+      })
     ),
     $queryRawUnsafe: jest.fn().mockResolvedValue([{ avg_secs: 120 }]),
   },
@@ -90,8 +103,14 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockTicketUpdate.mockReset();
   mockEventCreate.mockReset();
+  mockOutboxCreate.mockReset();
+  mockOutboxCreate.mockResolvedValue({ id: "outbox-1" });
   (prisma.$transaction as jest.Mock).mockImplementation((fn) =>
-    fn({ ticket: { update: mockTicketUpdate }, ticketEvent: { create: mockEventCreate } })
+    fn({
+      ticket: { update: mockTicketUpdate },
+      ticketEvent: { create: mockEventCreate },
+      emailOutbox: { create: mockOutboxCreate },
+    })
   );
 });
 

@@ -46,6 +46,9 @@ coverage/
 # Docker volumes (mounted)
 postgres-data/
 
+# Local backups and exported artifacts
+backups/
+
 # Misc
 *.crdownload
 SCRUM_ServiceDesk_2Sprints*.docx
