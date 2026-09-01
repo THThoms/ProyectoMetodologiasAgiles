@@ -42,9 +42,20 @@ function isAdminEmail(email: string): boolean {
   return env.adminEmails.includes(email.toLowerCase());
 }
 
+const MICROSOFT_ACCOUNT_PROFILES: Record<string, { name: string; role: Role }> = {
+  "bparedes8678@uta.edu.ec": { name: "Belén Paredes", role: Role.user },
+  // tech_n1 atiende el área TECHNICIANS + GENERAL en ticket-service/areaService.
+  "mgarcia7795@uta.edu.ec": { name: "Manolo García", role: Role.tech_n1 },
+};
+
+function microsoftProfileForEmail(email: string): { name: string; role: Role } | undefined {
+  return MICROSOFT_ACCOUNT_PROFILES[email.toLowerCase()];
+}
+
 // Provisión automática: si el usuario no existe en la BD local, lo crea con su rol.
 // Los correos listados en ADMIN_EMAILS reciben siempre rol admin (incluso si ya
-// existían con otro rol). El resto se crea como `user` y se puede promover desde /admin.
+// existían con otro rol). Las cuentas Microsoft conocidas reciben el rol
+// preaprobado por correo; el resto se crea como `user` y se puede promover desde /admin.
 export async function upsertUserFromMicrosoft(claims: MicrosoftClaims) {
   const email = extractEmail(claims);
   if (!email) {
@@ -56,19 +67,22 @@ export async function upsertUserFromMicrosoft(claims: MicrosoftClaims) {
 
   const normalizedEmail = email.toLowerCase();
   const shouldBeAdmin = isAdminEmail(normalizedEmail);
+  const microsoftProfile = microsoftProfileForEmail(normalizedEmail);
+  const resolvedRole = shouldBeAdmin ? Role.admin : microsoftProfile?.role ?? Role.user;
+  const resolvedName = microsoftProfile?.name ?? claims.name ?? email;
 
   return prisma.user.upsert({
     where: { email: normalizedEmail },
     update: {
       microsoftId: claims.oid,
-      name: claims.name ?? email,
-      ...(shouldBeAdmin ? { role: Role.admin } : {}),
+      name: resolvedName,
+      role: resolvedRole,
     },
     create: {
       email: normalizedEmail,
-      name: claims.name ?? email,
+      name: resolvedName,
       microsoftId: claims.oid,
-      role: shouldBeAdmin ? Role.admin : Role.user,
+      role: resolvedRole,
     },
   });
 }
@@ -116,15 +130,22 @@ export async function microsoftSimulatedLogin(email?: string) {
   }
 
   const shouldBeAdmin = isAdminEmail(normalizedEmail);
+  const microsoftProfile = microsoftProfileForEmail(normalizedEmail);
+  const resolvedRole = shouldBeAdmin ? Role.admin : microsoftProfile?.role ?? Role.user;
+  const resolvedName =
+    microsoftProfile?.name ?? normalizedEmail.split("@")[0].replace(".", " ");
 
   // Buscar usuario existente o crear uno nuevo
   const user = await prisma.user.upsert({
     where: { email: normalizedEmail },
-    update: shouldBeAdmin ? { role: Role.admin } : {},
+    update: {
+      name: resolvedName,
+      role: resolvedRole,
+    },
     create: {
       email: normalizedEmail,
-      name: normalizedEmail.split("@")[0].replace(".", " "),
-      role: shouldBeAdmin ? Role.admin : Role.user,
+      name: resolvedName,
+      role: resolvedRole,
     },
   });
 

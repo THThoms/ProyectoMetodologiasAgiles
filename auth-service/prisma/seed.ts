@@ -31,6 +31,12 @@ type SeedUser = {
   legacyEmails?: string[];
 };
 
+type MicrosoftSeedUser = {
+  email: string;
+  name: string;
+  role: Role;
+};
+
 const seedUsers: SeedUser[] = [
   { email: "admin@uta.edu.ec",       name: "Administrador UTA",          role: Role.admin,   password: "admin123" },
   { email: "msolis5357@uta.edu.ec",  name: "Tomás Solís (Admin)",        role: Role.admin,   password: "msolis123" },
@@ -41,6 +47,12 @@ const seedUsers: SeedUser[] = [
   { email: "mateo.cordova@uta.edu.ec",   name: "Mateo Córdova",   role: Role.tech_n3, password: "tecn5123", legacyEmails: ["tecn5@uta.edu.ec"] },
   { email: "docente@uta.edu.ec",     name: "Docente de Prueba",          role: Role.user,    password: "docente123" },
   { email: "estudiante@uta.edu.ec",  name: "Estudiante de Prueba",       role: Role.user,    password: "estudiante123" },
+];
+
+const microsoftSeedUsers: MicrosoftSeedUser[] = [
+  { email: "bparedes8678@uta.edu.ec", name: "Belén Paredes", role: Role.user },
+  // tech_n1 queda autorizado para el área Técnicos (TECHNICIANS) en ticket-service.
+  { email: "mgarcia7795@uta.edu.ec", name: "Manolo García", role: Role.tech_n1 },
 ];
 
 async function main() {
@@ -86,7 +98,28 @@ async function main() {
       },
     });
   }
-  console.log(`Seed auth-service: ${seedUsers.length} usuarios listos (contraseñas con bcrypt)`);
+
+  for (const u of microsoftSeedUsers) {
+    await prisma.user.upsert({
+      where: { email: u.email },
+      update: {
+        name: u.name,
+        role: u.role,
+        passwordHash: null,
+      },
+      create: {
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        passwordHash: null,
+        microsoftId: null,
+      },
+    });
+  }
+
+  console.log(
+    `Seed auth-service: ${seedUsers.length} usuarios locales y ${microsoftSeedUsers.length} usuarios Microsoft listos`
+  );
 }
 
 main()

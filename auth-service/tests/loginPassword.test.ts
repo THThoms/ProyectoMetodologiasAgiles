@@ -8,6 +8,7 @@ import crypto from "crypto";
 
 const mockUserFindUnique = jest.fn();
 const mockUserUpdate = jest.fn();
+const mockUserUpsert = jest.fn();
 const mockSessionCreate = jest.fn();
 const mockAuthLogCreate = jest.fn();
 
@@ -16,6 +17,7 @@ jest.mock("../src/db/client", () => ({
     user: {
       findUnique: (...a: unknown[]) => mockUserFindUnique(...a),
       update: (...a: unknown[]) => mockUserUpdate(...a),
+      upsert: (...a: unknown[]) => mockUserUpsert(...a),
     },
     session: { create: (...a: unknown[]) => mockSessionCreate(...a) },
     authLog: { create: (...a: unknown[]) => mockAuthLogCreate(...a) },
@@ -47,6 +49,14 @@ beforeEach(() => {
   mockSessionCreate.mockResolvedValue({ id: "sess" });
   mockAuthLogCreate.mockResolvedValue({ id: "log" });
   mockUserUpdate.mockResolvedValue({ id: USER_ID });
+  mockUserUpsert.mockImplementation(async (args) => ({
+    id: USER_ID,
+    email: args.where.email,
+    name: args.update?.name ?? args.create?.name,
+    role: args.update?.role ?? args.create?.role,
+    microsoftId: args.update?.microsoftId ?? args.create?.microsoftId ?? null,
+    passwordHash: null,
+  }));
 });
 
 describe("POST /auth/login", () => {
@@ -119,5 +129,54 @@ describe("POST /auth/login", () => {
   it("400 si faltan credenciales", async () => {
     const res = await request(app).post("/auth/login").send({ correo: "docente@uta.edu.ec" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /auth/microsoft-simulate", () => {
+  it("configura bparedes8678@uta.edu.ec como usuario solicitante Microsoft sin passwordHash", async () => {
+    const res = await request(app)
+      .post("/auth/microsoft-simulate")
+      .send({ email: "bparedes8678@uta.edu.ec" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.user.correo).toBe("bparedes8678@uta.edu.ec");
+    expect(res.body.user.rol).toBe("user");
+    expect(JSON.stringify(res.body)).not.toContain("passwordHash");
+
+    const upsertArg = mockUserUpsert.mock.calls[0][0];
+    expect(upsertArg.where).toEqual({ email: "bparedes8678@uta.edu.ec" });
+    expect(upsertArg.update).toMatchObject({
+      name: "Belén Paredes",
+      role: "user",
+    });
+    expect(upsertArg.create).toMatchObject({
+      email: "bparedes8678@uta.edu.ec",
+      name: "Belén Paredes",
+      role: "user",
+    });
+    expect(upsertArg.create).not.toHaveProperty("passwordHash");
+  });
+
+  it("configura mgarcia7795@uta.edu.ec como técnico tech_n1 para área Técnicos", async () => {
+    const res = await request(app)
+      .post("/auth/microsoft-simulate")
+      .send({ email: "mgarcia7795@uta.edu.ec" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.user.correo).toBe("mgarcia7795@uta.edu.ec");
+    expect(res.body.user.rol).toBe("tech_n1");
+
+    const upsertArg = mockUserUpsert.mock.calls[0][0];
+    expect(upsertArg.where).toEqual({ email: "mgarcia7795@uta.edu.ec" });
+    expect(upsertArg.update).toMatchObject({
+      name: "Manolo García",
+      role: "tech_n1",
+    });
+    expect(upsertArg.create).toMatchObject({
+      email: "mgarcia7795@uta.edu.ec",
+      name: "Manolo García",
+      role: "tech_n1",
+    });
+    expect(upsertArg.create).not.toHaveProperty("passwordHash");
   });
 });
