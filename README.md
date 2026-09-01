@@ -1,217 +1,478 @@
-# ServiceDesk UTA — Sistema de gestión de tickets de soporte
+# ServiceDesk UTA
 
-Sistema institucional de mesa de ayuda para docentes, estudiantes, administrativos y técnicos de la Universidad Técnica de Ambato (FISEI). Implementado como **monorepo 100 % microservicios** con autenticación SSO Microsoft / Azure AD.
+**Sistema institucional de gestión de tickets (Help Desk) para la Universidad Técnica de Ambato** — resuelve el flujo completo de reporte, asignación, atención, resolución y auditoría de incidencias de soporte técnico, con notificaciones automáticas por correo, historial imprimible y estadísticas en vivo.
 
-> Sprint 1 — 5 historias, 31 puntos de historia.
-
----
-
-## 1. Arquitectura
-
-```
-                 ┌────────────────────┐
-   navegador ──▶ │  api-gateway :8080 │  (único puerto expuesto al host)
-                 └─────────┬──────────┘
-                           │  red interna Docker `servicedesk-net`
-       ┌───────────────────┼───────────────────────────────┐
-       ▼                   ▼                               ▼
-┌──────────────┐   ┌─────────────────┐            ┌──────────────────┐
-│ auth-service │   │ catalog-service │            │  ticket-service  │
-│    :3001     │   │     :3002       │            │      :3003       │
-└──────┬───────┘   └─────────┬───────┘            └─────────┬────────┘
-       │                     │                              │
-       ▼                     ▼                              ▼
-   auth_db              catalog_db                       ticket_db   (PostgreSQL · 1 instancia, 3 schemas aislados)
-```
-
-Reglas inquebrantables del Sprint 1:
-
-- Cada microservicio tiene su propio `package.json`, `Dockerfile`, `prisma/schema.prisma`.
-- **NO** hay librerías compartidas entre microservicios.
-- **TODA** comunicación frontend → backend pasa por el **API Gateway** (`http://localhost:8080`).
-- Cada microservicio valida el JWT del auth-service antes de procesar peticiones.
-- Stack: Node.js + Express + Prisma ORM + PostgreSQL + Docker Compose · Frontend: React + Vite + Tailwind.
+Diseñado como **monorepo de microservicios** con autenticación local + SSO Microsoft (Azure AD), base de conocimiento compartida y reportes individuales por técnico.
 
 ---
 
-## 2. Requisitos previos
+## Badges
+
+![Sprint](https://img.shields.io/badge/Sprint-3%20completo-success)
+![Node](https://img.shields.io/badge/Node.js-20-brightgreen)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)
+![Prisma](https://img.shields.io/badge/Prisma-5.22-2D3748)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791)
+![React](https://img.shields.io/badge/React-18.3-61DAFB)
+![Vite](https://img.shields.io/badge/Vite-5.4-646CFF)
+![Tailwind](https://img.shields.io/badge/Tailwind-3.4-38B2AC)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED)
+![Tests](https://img.shields.io/badge/Tests-228%2F228-brightgreen)
+![License](https://img.shields.io/badge/License-Académica%20UTA-lightgrey)
+
+---
+
+## Tabla de Contenidos
+
+1. [Descripción](#descripción)
+2. [Tecnologías Utilizadas](#tecnologías-utilizadas)
+3. [Instalación y Configuración](#instalación-y-configuración)
+4. [Uso / Ejecución](#uso--ejecución)
+5. [Arquitectura y Estructura de Carpetas](#arquitectura-y-estructura-de-carpetas)
+6. [Pruebas](#pruebas)
+7. [Historias de Usuario cubiertas](#historias-de-usuario-cubiertas)
+8. [Autor y Contribución](#autor-y-contribución)
+9. [Licencia](#licencia)
+
+---
+
+## Descripción
+
+ServiceDesk UTA cubre tres perfiles:
+
+- **Usuario solicitante** (docente, estudiante o administrativo) — crea tickets, adjunta imágenes, sigue el estado del suyo, recibe notificaciones por correo, imprime el historial oficial.
+- **Técnico** — ve la bandeja de tickets disponibles de su área (Técnicos / TICs / General), acepta, aporta, deriva, resuelve con solución de la base de conocimiento (existente o nueva).
+- **Administrador** — asigna tickets manualmente, ve estadísticas en vivo con filtro por rango de fechas, historial general filtrable, genera reportes individuales por técnico con impresión y exportación a PDF.
+
+Además implementa: seguridad de contraseñas con política institucional y hash bcrypt (con migración transparente de hashes SHA-256 legacy), notificaciones por correo con patrón *outbox* tolerante a fallos, y encabezados de reporte alineables a los períodos académicos oficiales de la UTA.
+
+---
+
+## Tecnologías Utilizadas
+
+### Backend (por microservicio)
+
+| Categoría | Tecnología | Versión |
+|---|---|---|
+| Runtime | Node.js (alpine) | 20 |
+| Lenguaje | TypeScript (strict) | 5.7 |
+| Framework HTTP | Express | 4.21 |
+| ORM | Prisma | 5.22 |
+| Base de datos | PostgreSQL | 16 |
+| Validación runtime | Zod | 3.24 |
+| Autenticación | jsonwebtoken (JWT) | 9.0 |
+| Hashing | bcryptjs (12 rounds) | 3.0 |
+| SSO Microsoft | @azure/msal-node | 2.16 |
+| HTTP interno | axios | 1.7 |
+| Uploads | multer | 1.4 |
+| Correo SMTP | nodemailer | 8.0 |
+| Seguridad HTTP | helmet, cors, morgan | – |
+| API Gateway | http-proxy-middleware | 3.0 |
+
+### Frontend
+
+| Categoría | Tecnología |
+|---|---|
+| UI | React 18.3 + TypeScript 5.7 |
+| Bundler | Vite 5.4 |
+| Router | react-router-dom 6.28 |
+| Estilos | Tailwind CSS 3.4 + PostCSS + autoprefixer |
+| Gráficos | SVG custom (Donut, Bar, Line) — sin librería externa |
+| Servidor prod | nginx 1.27 |
+
+### Infraestructura y testing
+
+| Herramienta | Uso |
+|---|---|
+| Docker + Docker Compose | Orquestación (multi-stage Dockerfiles) |
+| Jest + ts-jest + Supertest | Pruebas automatizadas (~228 tests verdes) |
+
+---
+
+## Instalación y Configuración
+
+### Requisitos previos
 
 | Herramienta | Versión mínima | Notas |
-|-------------|----------------|-------|
-| Docker      | 24+            | Con Compose v2 (`docker compose`) |
-| Git         | cualquiera     | |
-| (opcional) Cuenta Azure AD con app registrada | — | Para SSO real; ver §6. Mientras tanto se puede usar **dev-login**. |
+|---|---|---|
+| Docker | 24+ | Con Compose v2 (`docker compose`) |
+| Git | cualquiera | Para clonar el repositorio |
+| (opcional) Cuenta Azure AD | — | Para SSO real; sin ella funcionan login local y dev-login |
+| (opcional) Cuenta Gmail con App Password | — | Para envío real de correos; sin ella el sistema queda en modo `log` |
 
----
+### 1. Clonar el repositorio
 
-## 3. Arranque rápido (un solo comando)
+```bash
+git clone https://github.com/THThoms/ProyectoMetodologiasAgiles.git
+cd ProyectoMetodologiasAgiles
+git checkout Develop
+```
+
+### 2. Configurar variables de entorno
 
 ```bash
 cp .env.example .env
-# (opcional) edita .env si quieres cambiar contraseñas o configurar Azure AD
-docker compose up --build
 ```
 
-Al finalizar deberías ver:
+Edita `.env` y ajusta al menos:
+
+```env
+# JWT (obligatorio en todos los entornos)
+JWT_SECRET=una_cadena_larga_y_aleatoria_de_al_menos_32_caracteres
+JWT_EXPIRES_IN=8h
+
+# Microsoft SSO (opcional; si están vacíos, dev-login y login local siguen funcionando)
+MICROSOFT_CLIENT_ID=...
+MICROSOFT_TENANT_ID=...
+MICROSOFT_CLIENT_SECRET=...
+MICROSOFT_REDIRECT_URI=http://localhost:8080/auth/callback
+
+# Correos institucionales que reciben rol admin al hacer SSO
+ADMIN_EMAILS=admin@uta.edu.ec
+
+# Envío de correos (opcional; default modo `log`)
+EMAIL_NOTIFICATIONS_ENABLED=true
+EMAIL_SEND_MODE=log        # o `smtp` si tienes Gmail App Password
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=ServiceDesk UTA <no-reply@uta.edu.ec>
+
+# Dev-login (bypass sin contraseña; SOLO desarrollo local)
+AUTH_DEV_LOGIN=true
+```
+
+> El archivo `.env` está ignorado por git — nunca se sube al repositorio. Solo `.env.example` (sin credenciales reales) se versiona.
+
+### 3. Levantar todo con Docker
+
+```bash
+docker compose build
+docker compose up -d
+docker compose ps
+```
+
+Cuando los 6 contenedores estén `healthy`, la aplicación está lista.
+
+---
+
+## Uso / Ejecución
+
+### URLs
 
 | Servicio | URL |
-|----------|-----|
-| Frontend (SPA)     | http://localhost:3000 |
-| API Gateway        | http://localhost:8080 |
-| Healthcheck gateway | http://localhost:8080/health |
-| Postgres (interno) | accesible solo desde la red Docker |
+|---|---|
+| Aplicación web (frontend) | http://localhost:3000 |
+| API Gateway (backend) | http://localhost:8080 |
+| Health check gateway | http://localhost:8080/health |
 
-> Los esquemas Prisma se sincronizan con `prisma db push` y los seeds aplicables se ejecutan automáticamente en el arranque de cada microservicio.
+Los microservicios internos (`auth :3001`, `catalog :3002`, `ticket :3003`, `postgres :5432`) **no están expuestos al host** — solo se acceden por la red interna de Docker.
 
----
+### Cuentas de prueba precargadas por el seed
 
-## 3.1 Verificación de instalación local
+**Login local** (correo + contraseña):
 
-Para asegurarte de que todos los microservicios tienen las dependencias correctas y compilan sin problemas en tu entorno, ejecuta el script de verificación. Este script recorrerá cada carpeta, ejecutará `npm install`, `npm run build` e indicará si hay algún error, además de validar la configuración de Docker Compose.
+| Rol | Correo | Contraseña |
+|---|---|---|
+| Administrador | `admin@uta.edu.ec` | `admin123` |
+| Administrador | `msolis5357@uta.edu.ec` | `msolis123` |
+| Técnico (Técnicos) | `carlos.mena@uta.edu.ec` | `tecn1123` |
+| Técnico (Técnicos) | `daniela.paredes@uta.edu.ec` | `tecn2123` |
+| Técnico (TICs) | `andres.salazar@uta.edu.ec` | `tecn3123` |
+| Técnico (TICs) | `valeria.nunez@uta.edu.ec` | `tecn4123` |
+| Técnico (TICs) | `mateo.cordova@uta.edu.ec` | `tecn5123` |
+| Usuario | `docente@uta.edu.ec` | `docente123` |
+| Usuario | `estudiante@uta.edu.ec` | `estudiante123` |
 
-```cmd
-verificar_proyecto.bat
+**Solo Microsoft simulado** (usar el botón "Microsoft simulado" en el login):
+
+| Rol | Correo |
+|---|---|
+| Técnico (Técnicos) | `mgarcia7795@uta.edu.ec` |
+| Usuario | `bparedes8678@uta.edu.ec` |
+
+### Comandos útiles de Docker
+
+```bash
+# Ver logs de un servicio
+docker compose logs -f ticket-service
+
+# Reconstruir un servicio tras cambios en código
+docker compose build ticket-service
+docker compose up -d ticket-service
+
+# Detener todo
+docker compose down
+
+# Detener y borrar volúmenes (⚠ borra la base de datos)
+docker compose down -v
 ```
 
----
+### Desarrollo local sin Docker (opcional)
 
-## 4. Flujo de prueba end-to-end (Sprint 1)
+Cada microservicio se puede correr aparte:
 
-El Sprint 1 usa **autenticación con dos métodos independientes**:
+```bash
+cd ticket-service
+npm install
+npx prisma generate
+npm run dev            # ts-node-dev con hot reload
+```
 
-### Método 1 — Login local con correo y contraseña
-
-1. Abre `http://localhost:3000` → te redirige a `/login`.
-2. Ingresa el correo y contraseña de un usuario sembrado:
-   - `admin@uta.edu.ec` / `admin123` → `/admin/catalogo`
-   - `docente@uta.edu.ec` / `docente123` → `/tickets/nuevo`
-   - `carlos.mena@uta.edu.ec` / `tecn1123` → `/tickets/nuevo`
-3. Pulsa **Iniciar sesión** → entras directo al dashboard. **NO se pide Microsoft.**
-
-### Método 2 — Login simulado Microsoft Office 365
-
-1. Abre `http://localhost:3000/login`.
-2. Pulsa el botón **Microsoft Office 365** (borde naranja).
-3. El sistema usa el correo del campo de arriba (o `docente@uta.edu.ec` por defecto).
-4. Entras directo al dashboard. **NO se pide correo ni contraseña.**
-
-> Ambos métodos son **alternativas independientes**. Cada uno genera su propia sesión JWT
-> con `authProvider: "local"` o `authProvider: "microsoft-simulated"`.
-
-### Método 3 — SSO real con Microsoft (después de configurar Azure AD, §6)
-
-- Pulsas **Iniciar sesión con Microsoft** → Microsoft te redirige a Azure AD → confirmas → callback emite JWT → entras al dashboard según rol.
-- Si la cuenta NO termina en `@uta.edu.ec` el sistema te rechaza con mensaje claro.
+Se requiere un PostgreSQL local escuchando en `localhost:5432` con las 3 bases (`auth_db`, `catalog_db`, `ticket_db`) y sus usuarios respectivos, más el `.env` de cada servicio ajustado.
 
 ---
 
-## 5. Historias de usuario implementadas
+## Arquitectura y Estructura de Carpetas
 
-| HU | Microservicio | Responsable | Endpoints / artefacto |
-|----|---------------|-------------|------------------------|
-| HU-01 | `auth-service` | Tomas Solis | `/auth/login`, `/auth/microsoft-simulate`, `/auth/microsoft`, `/auth/microsoft/callback`, `/auth/me`, `/auth/logout`, `/auth/dev-login`, `/auth/config`, `/auth/verify` |
-| HU-02 | `api-gateway` + `docker-compose.yml` | Tomas Solis | `/api/auth/**`, `/api/catalog/**`, `/api/tickets/**` |
-| HU-03 | `catalog-service` | Manolo Garcia | `GET /services`, `GET /services/:id`, `POST /services`, `PATCH /services/:id`, `DELETE /services/:id` (+ seed con los 6 servicios institucionales) |
-| HU-04 | `ticket-service` | Carla Paredes | `POST /tickets` (multipart, hasta 5 imágenes 5MB), `GET /tickets`, `GET /tickets/:id` |
-| HU-05 | Prisma (3 schemas aislados) | Carla Paredes | `auth_db`, `catalog_db`, `ticket_db`. Migraciones automáticas. Seeds idempotentes. |
-
-Detalles de cada microservicio en su propio `README.md`:
-
-- [auth-service/README.md](auth-service/README.md)
-- [catalog-service/README.md](catalog-service/README.md)
-- [ticket-service/README.md](ticket-service/README.md)
-- [api-gateway/README.md](api-gateway/README.md)
-- [frontend/README.md](frontend/README.md)
-
----
-
-## 6. Configurar Azure AD (SSO real)
-
-1. Portal Azure → **Azure AD → App registrations → New registration**.
-2. **Redirect URI (Web)**: `http://localhost:8080/api/auth/microsoft/callback`.
-3. En **Certificates & secrets → New client secret** copia el `Value`.
-4. En **API permissions → Microsoft Graph** añade: `openid`, `profile`, `email`, `User.Read`. Concede consentimiento del admin.
-5. Edita `.env` y rellena:
-   ```env
-   AZURE_AD_CLIENT_ID=...
-   AZURE_AD_TENANT_ID=...           # tu tenant UTA
-   AZURE_AD_CLIENT_SECRET=...
-   AZURE_AD_REDIRECT_URI=http://localhost:8080/api/auth/microsoft/callback
-   ALLOWED_DOMAIN=uta.edu.ec
-   AUTH_DEV_LOGIN=false             # apaga el dev-login en cuanto el SSO funcione
-   ```
-6. Reinicia con `docker compose up -d --build auth-service`.
-
-El servicio rechaza automáticamente cualquier email que **no** termine en `@uta.edu.ec`.
-
----
-
-## 7. Estructura del monorepo
+### Diagrama de arquitectura
 
 ```
-servicedesk/
-├── api-gateway/        # Puerto 8080 (único expuesto)
-├── auth-service/       # Puerto 3001 · MSAL + JWT
-├── catalog-service/    # Puerto 3002 · Catálogo institucional
-├── ticket-service/     # Puerto 3003 · Tickets + adjuntos
-├── frontend/           # Puerto 3000 · React/Vite/Tailwind
-├── scripts/
-│   ├── init-multi-db.sh   # crea 3 BD + 3 usuarios en Postgres
-│   └── init-db.sh         # corre migraciones + seeds manualmente
-├── docker-compose.yml
-├── .env.example
+                    ┌──────────────────────┐
+                    │  Frontend :3000      │  React + Vite + Tailwind
+                    │  (nginx en runner)   │
+                    └──────────┬───────────┘
+                               │ HTTP + JWT
+                               ▼
+                    ┌──────────────────────┐
+                    │  API Gateway :8080   │  http-proxy-middleware
+                    │  Único punto público │  reenvía sin parsear body
+                    └───┬──────┬───────┬───┘
+                        │      │       │
+         ┌──────────────┘      │       └─────────────┐
+         ▼                     ▼                     ▼
+   ┌──────────┐         ┌──────────┐          ┌──────────┐
+   │  auth    │         │ catalog  │          │  ticket  │
+   │  :3001   │         │  :3002   │          │  :3003   │
+   │  JWT     │         │ Services │          │ Tickets  │
+   │  MSAL    │         │ Routing  │          │ Historial│
+   │  bcrypt  │         │  KB      │          │ Outbox   │
+   └────┬─────┘         └────┬─────┘          └────┬─────┘
+        │                    │                     │
+        └────────────────────┼─────────────────────┘
+                             ▼
+                    ┌──────────────────────┐
+                    │ PostgreSQL :5432     │
+                    │  auth_db             │  ← 3 bases aisladas
+                    │  catalog_db          │    sin FK cruzadas
+                    │  ticket_db           │    (integridad por app)
+                    └──────────────────────┘
+```
+
+### Estructura de carpetas del monorepo
+
+```
+servicedesk-microservices/
+├── api-gateway/              # Único punto público (Express + http-proxy-middleware)
+│   ├── src/
+│   │   ├── app.ts           # Configuración de proxies y rewrites
+│   │   ├── config/env.ts
+│   │   └── index.ts
+│   ├── Dockerfile
+│   └── package.json
+│
+├── auth-service/             # Autenticación + roles + SSO Microsoft
+│   ├── prisma/
+│   │   ├── schema.prisma    # Modelos User, Session, AuthLog
+│   │   └── seed.ts          # Cuentas seedeadas para desarrollo
+│   ├── src/
+│   │   ├── routes/authRoutes.ts     # /auth/login, /auth/microsoft, ...
+│   │   ├── services/authService.ts
+│   │   ├── utils/passwordSecurity.ts # Política + bcrypt + legacy migration
+│   │   ├── middleware/verifyJwt.ts
+│   │   └── config/msal.config.ts
+│   ├── tests/
+│   ├── Dockerfile
+│   └── package.json
+│
+├── catalog-service/          # Servicios institucionales + Base de conocimiento
+│   ├── prisma/
+│   │   ├── schema.prisma    # Modelos Service, RoutingRule, KnowledgeArticle
+│   │   └── seed.ts          # 29 artículos KB iniciales
+│   ├── src/
+│   │   ├── routes/
+│   │   │   ├── serviceRoutes.ts     # CRUD del catálogo
+│   │   │   └── knowledgeRoutes.ts   # KB search + create
+│   │   └── ...
+│   ├── tests/
+│   ├── Dockerfile
+│   └── package.json
+│
+├── ticket-service/           # Núcleo del negocio: tickets + historial + outbox
+│   ├── prisma/
+│   │   └── schema.prisma    # Ticket, TicketEvent, Attachment, EmailOutbox
+│   ├── src/
+│   │   ├── routes/
+│   │   │   ├── ticketRoutes.ts       # CRUD ticket + historial
+│   │   │   ├── assignmentRoutes.ts   # accept, contributions, escalate, resolve
+│   │   │   ├── adminRoutes.ts        # assign, stats, historial, reports
+│   │   │   └── routingRoutes.ts      # Motor de enrutamiento legacy
+│   │   ├── services/
+│   │   │   ├── historyService.ts
+│   │   │   ├── areaService.ts        # Mapping rol → áreas
+│   │   │   ├── emailService.ts       # Transporte SMTP (log/mock/smtp)
+│   │   │   ├── emailOutboxService.ts # Patrón outbox
+│   │   │   ├── emailTemplates.ts     # 5 plantillas de correo
+│   │   │   ├── technicianReportService.ts  # HU-16: reporte por técnico
+│   │   │   ├── authClient.ts         # HTTP client → auth-service
+│   │   │   ├── catalogClient.ts      # HTTP client → catalog-service
+│   │   │   └── knowledgeClient.ts    # HTTP client → catalog-service KB
+│   │   ├── middleware/
+│   │   │   ├── verifyJwt.ts
+│   │   │   └── upload.ts             # Multer para adjuntos
+│   │   └── config/env.ts
+│   ├── tests/                        # ~176 tests con Jest + Supertest
+│   ├── uploads/                      # Volumen de imágenes adjuntas
+│   ├── Dockerfile
+│   └── package.json
+│
+├── frontend/                 # React + Vite + Tailwind
+│   ├── src/
+│   │   ├── pages/
+│   │   │   ├── Login.tsx
+│   │   │   ├── NuevoTicket.tsx
+│   │   │   ├── MisTickets.tsx              # Vista del solicitante
+│   │   │   ├── PanelTecnicoV2.tsx          # Bandeja del técnico
+│   │   │   ├── MisTicketsAceptados.tsx     # Activos/Historial del técnico
+│   │   │   ├── BaseConocimiento.tsx        # Búsqueda de KB
+│   │   │   ├── AdminStats.tsx              # Dashboard con filtros de fecha
+│   │   │   ├── AdminHistorial.tsx          # Historial general filtrable
+│   │   │   ├── AdminReporteTecnicos.tsx    # HU-16: reporte por técnico
+│   │   │   └── AdminCatalogo.tsx           # CRUD servicios
+│   │   ├── components/
+│   │   │   ├── Layout.tsx                  # Navbar + subnav adaptativo
+│   │   │   ├── TicketHistoryModal.tsx      # Modal reutilizable
+│   │   │   ├── ResolveTicketModal.tsx
+│   │   │   ├── TicketActionModals.tsx
+│   │   │   └── charts/                     # SVG puro
+│   │   │       ├── DonutChart.tsx
+│   │   │       ├── BarChart.tsx
+│   │   │       └── LineChart.tsx
+│   │   ├── lib/
+│   │   │   ├── api.ts                      # axios con JWT + 401 handling
+│   │   │   ├── auth.ts                     # Manejo local del JWT
+│   │   │   └── technician.ts               # Helpers de presentación
+│   │   ├── App.tsx                         # Router + ProtectedRoute
+│   │   └── main.tsx
+│   ├── public/
+│   ├── nginx.conf
+│   ├── Dockerfile
+│   └── package.json
+│
+├── scripts/                  # Scripts de inicialización de Postgres
+├── docker-compose.yml        # Orquestación de los 6 contenedores
+├── .env.example              # Plantilla de variables (sin secretos)
+├── .gitignore                # Ignora .env, node_modules, dist, uploads, ...
 └── README.md
 ```
 
----
+### Reglas arquitectónicas del proyecto
 
-## 8. Roles y usuarios sembrados (dev-login)
-
-| Email                    | Rol       | Pantalla inicial    |
-|--------------------------|-----------|---------------------|
-| `admin@uta.edu.ec`       | `admin`   | /admin/catalogo     |
-| `carlos.mena@uta.edu.ec`     | `tech_n1` | /tickets/nuevo *    |
-| `daniela.paredes@uta.edu.ec` | `tech_n2` | /tickets/nuevo *    |
-| `andres.salazar@uta.edu.ec`  | `tech_n3` | /tickets/nuevo *    |
-| `valeria.nunez@uta.edu.ec`   | `tech_n4` | /tickets/nuevo *    |
-| `mateo.cordova@uta.edu.ec`   | `tech_n3` | /tickets/nuevo *    |
-| `docente@uta.edu.ec`     | `user`    | /tickets/nuevo      |
-| `estudiante@uta.edu.ec`  | `user`    | /tickets/nuevo      |
-
-\* Sprint 2 añade la bandeja de trabajo para técnicos.
+- Cada microservicio tiene su propio `package.json`, `Dockerfile`, `prisma/schema.prisma` y base de datos.
+- **NO** hay librerías compartidas entre microservicios.
+- **TODA** comunicación frontend → backend pasa por el API Gateway.
+- Cada microservicio valida el JWT localmente (defensa en profundidad; no confía ciegamente en el gateway).
+- La integridad referencial entre bases se mantiene por aplicación, no por foreign keys físicas.
+- Los tickets guardan datos denormalizados (`userName`, `serviceName`) para sobrevivir aunque auth o catalog estén caídos.
 
 ---
 
-## 9. Troubleshooting
+## Pruebas
 
-| Síntoma | Solución |
-|---------|----------|
-| `docker compose up` se queda en `auth-service: waiting for postgres` | El primer arranque crea las 3 BD; espera ~30s. Si persiste, revisa logs: `docker compose logs postgres` |
-| `auth-service` crashea con `Falta variable de entorno requerida: JWT_SECRET` | Confirma que copiaste `.env.example` a `.env` y que la variable está definida |
-| Login con Microsoft devuelve `error=domain_not_allowed` | La cuenta no pertenece a `@uta.edu.ec`. Cambia de cuenta o ajusta `ALLOWED_DOMAIN` |
-| Login con Microsoft devuelve `error=sso_not_configured` | Faltan `AZURE_AD_*` en `.env`. Mientras tanto usa **dev-login** |
-| Subir imagen > 5MB devuelve 413 | Comportamiento esperado; comprime la imagen |
-| Tickets devuelve `502 No se pudo validar el servicio en el catálogo` | El `catalog-service` no está corriendo o no es alcanzable. Revisa `docker compose ps` |
-| Necesito reiniciar las BD desde cero | `docker compose down -v && docker compose up --build` (⚠ borra los datos) |
+El proyecto tiene ~228 tests automatizados verdes.
+
+### Ejecutar toda la suite
+
+```bash
+# ticket-service (188 tests)
+cd ticket-service
+npm test
+
+# catalog-service (29 tests)
+cd ../catalog-service
+npm test
+
+# auth-service (23 tests)
+cd ../auth-service
+npm test
+```
+
+### Validaciones adicionales por servicio
+
+```bash
+# Type check estricto
+npx tsc --noEmit
+
+# Prisma schema
+DATABASE_URL="postgresql://x:x@x:5432/x" npx prisma validate
+
+# Build de producción
+npm run build
+```
+
+### Frontend
+
+```bash
+cd frontend
+npx tsc -b --noEmit   # Type check
+npm run build         # Build de producción
+```
 
 ---
 
-## 10. Definición de hecho — checklist Sprint 1
+## Historias de Usuario cubiertas
 
-- [x] Cada microservicio expone sus endpoints REST documentados (`README.md` por servicio).
-- [x] HU-01: SSO Microsoft con validación de tenant `@uta.edu.ec` + JWT propio + roles.
-- [x] HU-02: API Gateway con http-proxy-middleware. Solo el gateway expone puerto al host. CORS y healthchecks listos.
-- [x] HU-03: CRUD del catálogo, solo admin escribe, soft delete, seed con los 6 servicios.
-- [x] HU-04: Creación de ticket con multipart (≤5 imágenes JPG/PNG, ≤5MB c/u), número auto `TK-YYYYMMDD-NNN`, consulta a catalog-service para nivel.
-- [x] HU-05: 3 schemas Prisma aislados, sincronizados vía `prisma db push` al arrancar.
-- [x] Frontend con paleta UTA: `/login`, `/auth/callback`, `/tickets/nuevo`, `/admin/catalogo`.
-- [x] Un solo comando `docker compose up --build` levanta todo.
-- [x] Todos los endpoints (excepto `/auth/microsoft*`, `/auth/dev-login`, `/auth/config`, `/health`, `GET /services`) validan JWT.
+### Sprint 1
+- **HU-01 a HU-05:** Base del sistema (roles, autenticación, creación de tickets).
+
+### Sprint 2
+- **HU-06 a HU-08:** Enrutamiento por área responsable, panel técnico, escalamiento.
+- **HU-09:** Historial completo por ticket.
+- **HU-10:** Base de conocimiento institucional.
+- **HU-11:** Estadísticas para el administrador.
+
+### Sprint 3
+- **HU-12:** Filtro por rango de fechas en las estadísticas administrativas.
+- **HU-13:** Seguridad de contraseñas (política institucional + bcrypt + migración transparente de hashes SHA-256 legacy).
+- **HU-14:** Impresión de historial del ticket con encabezado institucional.
+- **HU-15:** Notificaciones por correo (patrón outbox tolerante a fallos + Gmail SMTP con nodemailer).
+- **HU-16:** Reporte individual de actividades del técnico (solo admin) con impresión, exportación a PDF y períodos institucionales UTA.
 
 ---
 
-## 11. Equipo Sprint 1
+## Autor y Contribución
 
-- **Tomas Solis** — auth-service (HU-01) + API Gateway / Docker (HU-02)
-- **Manolo Garcia** — catalog-service (HU-03)
-- **Carla Paredes** — ticket-service (HU-04) + Modelo Prisma / Migraciones (HU-05)
+**Autor principal:** Tomás Solís (Tech Lead FISEI-UTA) — [@THThoms](https://github.com/THThoms)
+
+Proyecto académico desarrollado como parte de la asignatura **Metodologías Ágiles** — Cuarto semestre, Facultad de Ingeniería en Sistemas, Electrónica e Industrial (FISEI), Universidad Técnica de Ambato.
+
+### Directrices para contribuir
+
+1. Crea una rama a partir de `Develop`:
+   ```bash
+   git checkout Develop
+   git pull
+   git checkout -b feat/mi-nueva-feature
+   ```
+2. Sigue la **convención de commits** del proyecto (español, tipo Conventional Commits):
+   ```
+   feat(alcance): descripción corta
+   fix(alcance): descripción del fix
+   chore: cambios de infra o configuración
+   docs: cambios en documentación
+   ```
+3. Antes de hacer PR:
+   - `npm test` verde en el servicio modificado
+   - `npx tsc --noEmit` sin errores
+   - Nunca commitees archivos `.env` ni credenciales
+4. Abre un Pull Request contra la rama `Develop`, no contra `main`.
+5. `main` se actualiza solo con PRs desde `Develop` al cerrar cada sprint.
+
+---
+
+## Licencia
+
+Este software se distribuye bajo una **licencia académica interna** de la Universidad Técnica de Ambato — FISEI. Uso restringido a fines educativos y demostrativos del curso de Metodologías Ágiles.
+
+Copyright © 2026 Universidad Técnica de Ambato · FISEI · ServiceDesk Institucional.
