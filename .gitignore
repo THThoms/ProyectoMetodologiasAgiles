@@ -38,6 +38,9 @@ Thumbs.db
 coverage/
 **/coverage/
 
+# TypeScript incremental build cache (no debe versionarse)
+**/tsconfig.tsbuildinfo
+
 # Temporary
 *.tmp
 *.temp
