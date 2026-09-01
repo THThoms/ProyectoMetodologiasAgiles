@@ -19,6 +19,8 @@ import {
   dispatchInBackground,
   processPendingEmails,
 } from "../services/emailOutboxService";
+// HU-16: reporte individual del técnico.
+import { buildTechnicianReport } from "../services/technicianReportService";
 
 const router = Router();
 
@@ -519,5 +521,82 @@ router.post("/email-outbox/process", verifyJwt, requireAdmin, async (req: Reques
   const summary = await processPendingEmails(parsed.data.limit ?? 50);
   return res.json({ message: "Procesamiento de outbox completado", ...summary });
 });
+
+// ---------------------------------------------------------------------------
+// HU-16 - Reporte individual del técnico.
+//
+// GET /admin/reports/technicians/:technicianId?from=YYYY-MM-DD&to=YYYY-MM-DD
+//
+// Reglas:
+//   - Solo admin (verifyJwt + requireAdmin).
+//   - technicianId debe ser UUID y debe existir como técnico en auth-service.
+//   - Reporte se calcula sobre datos REALES de ticket_db (nunca ficticios).
+//   - Rango de fechas aplica al createdAt del ticket / evento (misma cohorte
+//     que HU-12 stats). Sin rango = todo el historial.
+// ---------------------------------------------------------------------------
+const reportQuerySchema = z.object({
+  from: dateOnly.optional(),
+  to: dateOnly.optional(),
+});
+
+router.get(
+  "/reports/technicians/:technicianId",
+  verifyJwt,
+  requireAdmin,
+  async (req: Request, res: Response) => {
+    // 1) Validar technicianId como UUID.
+    const idOk = z.string().uuid().safeParse(req.params.technicianId);
+    if (!idOk.success) {
+      return res.status(400).json({ error: "technicianId debe ser un UUID válido" });
+    }
+    const technicianId = idOk.data;
+
+    // 2) Validar fechas.
+    const parsed = reportQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Filtros inválidos", details: parsed.error.issues });
+    }
+    const { from: fromStr, to: toStr } = parsed.data;
+    const from = fromStr ? parseDayStart(fromStr) : null;
+    const to = toStr ? parseDayEnd(toStr) : null;
+    if (fromStr && !from) return res.status(400).json({ error: "from no es una fecha válida" });
+    if (toStr && !to) return res.status(400).json({ error: "to no es una fecha válida" });
+    if (from && to && from.getTime() > to.getTime()) {
+      return res.status(400).json({ error: "from no puede ser posterior a to" });
+    }
+
+    // 3) Validar que el técnico exista en auth-service (fuente de verdad).
+    const userToken = (req.headers.authorization ?? "").slice("Bearer ".length).trim();
+    let technicians;
+    try {
+      technicians = await fetchTechnicians(userToken);
+    } catch (err) {
+      console.error("[admin/reports/technicians] error obteniendo lista:", err);
+      return res.status(502).json({ error: "No se pudo obtener la lista de técnicos" });
+    }
+    const tech = technicians.find((t) => t.id === technicianId);
+    if (!tech) {
+      return res.status(404).json({ error: "Técnico no encontrado" });
+    }
+
+    // 4) Construir reporte real.
+    try {
+      const report = await buildTechnicianReport(
+        {
+          id: tech.id,
+          name: tech.name,
+          email: tech.email,
+          role: tech.role,
+          areas: areasForRole(tech.role),
+        },
+        { from, to }
+      );
+      return res.json(report);
+    } catch (err) {
+      console.error("[admin/reports/technicians] error construyendo reporte:", err);
+      return res.status(500).json({ error: "Error interno al generar el reporte" });
+    }
+  }
+);
 
 export default router;

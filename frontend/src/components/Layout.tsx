@@ -150,6 +150,18 @@ export function Layout({ children, showSubnav = true }: LayoutProps) {
             )}
             {user.role === "admin" && (
               <Link
+                to="/admin/reportes"
+                className={`px-4 py-2.5 text-sm font-medium transition ${
+                  isActive("/admin/reportes")
+                    ? "bg-uta-900"
+                    : "hover:bg-uta-900/60"
+                }`}
+              >
+                Reportes
+              </Link>
+            )}
+            {user.role === "admin" && (
+              <Link
                 to="/admin/catalogo"
                 className={`px-4 py-2.5 text-sm font-medium transition ${
                   isActive("/admin/catalogo")

@@ -9,6 +9,7 @@ import MisTickets from "./pages/MisTickets";
 import MisTicketsAceptados from "./pages/MisTicketsAceptados";
 import AdminStats from "./pages/AdminStats";
 import AdminHistorial from "./pages/AdminHistorial";
+import AdminReporteTecnicos from "./pages/AdminReporteTecnicos";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { getCurrentUser, landingRouteFor } from "./lib/auth";
 
@@ -70,6 +71,14 @@ export default function App() {
         element={
           <ProtectedRoute roles={["admin"]}>
             <AdminHistorial />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reportes"
+        element={
+          <ProtectedRoute roles={["admin"]}>
+            <AdminReporteTecnicos />
           </ProtectedRoute>
         }
       />
