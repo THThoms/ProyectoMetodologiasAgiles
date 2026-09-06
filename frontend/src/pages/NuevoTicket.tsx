@@ -24,7 +24,8 @@ const MAX_SIZE_MB = 5;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 const ACCEPTED = ["image/jpeg", "image/png", "image/jpg"];
 
-// Servicios que requieren indicar ubicación física (daño a equipos, problemas en laboratorios/aulas)
+// Sprint 3+: servicios cuyo flujo hace obligatoria la ubicación física.
+// Igual que antes; solo cambia la fuente de las opciones (catálogo API).
 const LOCATION_SERVICE_KEYWORDS = [
   "equipo",
   "hardware",
@@ -33,25 +34,11 @@ const LOCATION_SERVICE_KEYWORDS = [
   "conectividad",
 ];
 
-// Sugerencias de ubicaciones dentro de la universidad
-const LOCATION_SUGGESTIONS = [
-  "Laboratorio 1 - FISEI",
-  "Laboratorio 2 - FISEI",
-  "Laboratorio 3 - FISEI",
-  "Laboratorio 4 - FISEI",
-  "Laboratorio de Redes - FISEI",
-  "Laboratorio de Electrónica - FISEI",
-  "Aula A1 - FISEI",
-  "Aula A2 - FISEI",
-  "Aula A3 - FISEI",
-  "Aula B1 - FISEI",
-  "Aula B2 - FISEI",
-  "Sala de Docentes - FISEI",
-  "Oficina de Decanato - FISEI",
-  "Biblioteca - FISEI",
-  "Centro de Cómputo General",
-  "Otro (especificar en detalle)",
-];
+interface CatalogLocation {
+  id: string;
+  name: string;
+  isActive: boolean;
+}
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -69,6 +56,7 @@ export default function NuevoTicket() {
   const user = getCurrentUser();
 
   const [services, setServices] = useState<CatalogService[]>([]);
+  const [locations, setLocations] = useState<CatalogLocation[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [serviceId, setServiceId] = useState<string>("");
   const [detail, setDetail] = useState("");
@@ -82,6 +70,8 @@ export default function NuevoTicket() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<CreatedTicket | null>(null);
+  // Sprint 3+ : advertencia obligatoria antes de subir imágenes a Internet.
+  const [showImageWarning, setShowImageWarning] = useState(false);
 
   const today = useMemo(() => new Date().toLocaleDateString("es-EC", {
     year: "numeric", month: "long", day: "numeric",
@@ -102,6 +92,13 @@ export default function NuevoTicket() {
       .then((r) => setServices(r.data.services))
       .catch((err) => setError(extractApiError(err)))
       .finally(() => setLoadingServices(false));
+    // Sprint 3+ : catálogo de ubicaciones oficiales servidas por catalog-service.
+    // Se cargan siempre; si falla el fetch, dejamos el select vacío (no bloqueamos
+    // creación de tickets que no requieran ubicación).
+    api
+      .get<{ locations: CatalogLocation[] }>("/api/catalog/locations")
+      .then((r) => setLocations(r.data.locations))
+      .catch(() => setLocations([]));
   }, []);
 
   // Resetear ubicación al cambiar de servicio
@@ -148,21 +145,27 @@ export default function NuevoTicket() {
     return location || undefined;
   }
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  // Validaciones básicas del form. Devuelve true si todo OK.
+  function validateForm(): boolean {
     setError(null);
     if (!serviceId) {
       setError("Selecciona el servicio afectado.");
-      return;
+      return false;
     }
     if (detail.trim().length < 5) {
       setError("El detalle debe tener al menos 5 caracteres.");
-      return;
+      return false;
     }
     if (showLocation && !getEffectiveLocation()) {
       setError("Indica la ubicación donde se presenta el problema.");
-      return;
+      return false;
     }
+    return true;
+  }
+
+  // Envío real al backend. Se llama después de la advertencia (si hay imágenes)
+  // o directamente (si no hay imágenes).
+  async function performSubmit() {
     setSubmitting(true);
     const form = new FormData();
     form.append("serviceId", serviceId);
@@ -177,7 +180,6 @@ export default function NuevoTicket() {
         { headers: { "Content-Type": "multipart/form-data" } }
       );
       setCreated(data.ticket);
-      // Reset
       setDetail("");
       setServiceId("");
       setLocation("");
@@ -188,6 +190,26 @@ export default function NuevoTicket() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validateForm()) return;
+    // Sprint 3+: si hay imágenes, pedimos confirmación explícita antes de
+    // subirlas al almacenamiento externo (Cloudinary) o local.
+    if (files.length > 0) {
+      setShowImageWarning(true);
+      return;
+    }
+    await performSubmit();
+  }
+
+  async function confirmUpload() {
+    setShowImageWarning(false);
+    await performSubmit();
+  }
+  function cancelUpload() {
+    setShowImageWarning(false);
   }
 
   return (
@@ -279,12 +301,17 @@ export default function NuevoTicket() {
                 disabled={submitting}
                 required
               >
-                <option value="">Selecciona la ubicación</option>
-                {LOCATION_SUGGESTIONS.map((loc) => (
-                  <option key={loc} value={loc}>
-                    {loc}
+                <option value="">
+                  {locations.length === 0
+                    ? "Cargando ubicaciones..."
+                    : "Selecciona la ubicación"}
+                </option>
+                {locations.map((loc) => (
+                  <option key={loc.id} value={loc.name}>
+                    {loc.name}
                   </option>
                 ))}
+                <option value="Otro (especificar)">Otro (especificar)</option>
               </select>
               {location.startsWith("Otro") && (
                 <input
@@ -393,6 +420,57 @@ export default function NuevoTicket() {
             </button>
           </div>
         </form>
+
+        {/* Sprint 3+ - Advertencia obligatoria antes de subir imágenes */}
+        {showImageWarning && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="w-full max-w-md rounded-lg bg-white shadow-xl">
+              <div className="border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-bold text-uta-900">
+                  Advertencia sobre la imagen
+                </h2>
+              </div>
+              <div className="space-y-3 px-6 py-5 text-sm text-gray-700">
+                <p>
+                  La{files.length === 1 ? "" : "s"} imagen{files.length === 1 ? "" : "es"}{" "}
+                  seleccionada{files.length === 1 ? "" : "s"} ({files.length}) será
+                  {files.length === 1 ? "" : "n"} subida{files.length === 1 ? "" : "s"} y
+                  almacenada{files.length === 1 ? "" : "s"} en un servicio externo de
+                  Internet para poder adjuntarla{files.length === 1 ? "" : "s"} al ticket.
+                </p>
+                <p>
+                  Asegúrate de que la imagen no contenga información personal,
+                  confidencial o sensible que no deba compartirse.
+                </p>
+                <p className="text-xs text-gray-500">
+                  ¿Deseas continuar?
+                </p>
+              </div>
+              <div className="flex justify-end gap-2 border-t border-gray-200 bg-gray-50 px-6 py-3">
+                <button
+                  type="button"
+                  onClick={cancelUpload}
+                  disabled={submitting}
+                  className="rounded border border-gray-300 bg-white px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmUpload}
+                  disabled={submitting}
+                  className="btn-primary px-4 py-1.5 text-sm"
+                >
+                  {submitting ? "Subiendo…" : "Continuar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );
