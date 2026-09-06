@@ -231,8 +231,8 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
 <style>
   * { box-sizing: border-box; }
   body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; margin: 24px; font-size: 12px; }
-  header.doc { border-bottom: 2px solid #9c1f2c; padding-bottom: 10px; margin-bottom: 16px; }
-  .inst { font-size: 16px; font-weight: bold; color: #9c1f2c; }
+  header.doc { border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 16px; }
+  .inst { font-size: 16px; font-weight: bold; color: #1e3a8a; }
   .sys { font-size: 12px; color: #444; }
   h1 { font-size: 18px; margin: 12px 0 4px; }
   .printed { font-size: 11px; color: #555; }
@@ -242,7 +242,7 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
   h2 { font-size: 14px; margin: 18px 0 8px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
   ul.events { list-style: none; padding: 0; margin: 0; }
   li.event { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eee; page-break-inside: avoid; }
-  .ev-num { flex: 0 0 24px; height: 24px; width: 24px; border-radius: 50%; background: #9c1f2c; color: #fff; text-align: center; line-height: 24px; font-weight: bold; }
+  .ev-num { flex: 0 0 24px; height: 24px; width: 24px; border-radius: 50%; background: #1e3a8a; color: #fff; text-align: center; line-height: 24px; font-weight: bold; }
   .ev-body { flex: 1; }
   .ev-head { display: flex; justify-content: space-between; gap: 8px; }
   .ev-action { font-weight: bold; }
