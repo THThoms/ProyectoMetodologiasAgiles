@@ -139,7 +139,7 @@ describe("GET /tickets/my", () => {
 // GET /tickets/available
 // =============================================================================
 describe("GET /tickets/available", () => {
-  it("tech_n1 ve áreas TECHNICIANS + GENERAL", async () => {
+  it("tech_n1 ve solo área TECHNICIANS (Sprint 3+: sin GENERAL)", async () => {
     (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.ticket.count as jest.Mock).mockResolvedValue(0);
     const token = makeToken("tech_n1");
@@ -147,18 +147,16 @@ describe("GET /tickets/available", () => {
       .get("/tickets/available")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body.areas).toEqual(expect.arrayContaining(["TECHNICIANS", "GENERAL"]));
+    expect(res.body.areas).toEqual(["TECHNICIANS"]);
     const call = (prisma.ticket.findMany as jest.Mock).mock.calls[0][0];
     expect(call.where.assignmentStatus).toBe("available");
     expect(call.where.assignedTechnicianId).toBeNull();
     expect(call.where.status).toEqual({ notIn: ["resuelto", "cerrado"] });
-    expect(call.where.responsibleArea.in).toEqual(
-      expect.arrayContaining(["TECHNICIANS", "GENERAL"])
-    );
-    expect(call.where.responsibleArea.in).not.toContain("TICS");
+    expect(call.where.responsibleArea.in).toEqual(["TECHNICIANS"]);
+    expect(call.where.responsibleArea.in).not.toContain("DTIC");
   });
 
-  it("tech_n3 ve áreas TICS + GENERAL (no TECHNICIANS)", async () => {
+  it("tech_n3 ve solo área DTIC (Sprint 3+: sin GENERAL, sin TECHNICIANS)", async () => {
     (prisma.ticket.findMany as jest.Mock).mockResolvedValue([]);
     (prisma.ticket.count as jest.Mock).mockResolvedValue(0);
     const token = makeToken("tech_n3");
@@ -167,7 +165,7 @@ describe("GET /tickets/available", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.areas).not.toContain("TECHNICIANS");
-    expect(res.body.areas).toEqual(expect.arrayContaining(["TICS", "GENERAL"]));
+    expect(res.body.areas).toEqual(["DTIC"]);
     const call = (prisma.ticket.findMany as jest.Mock).mock.calls[0][0];
     expect(call.where.responsibleArea.in).not.toContain("TECHNICIANS");
   });
@@ -198,7 +196,7 @@ describe("POST /tickets/:id/accept", () => {
           assignmentStatus: "available",
           assignedTechnicianId: null,
           status: { notIn: ["resuelto", "cerrado"] },
-          responsibleArea: { in: ["TECHNICIANS", "GENERAL"] },
+          responsibleArea: { in: ["TECHNICIANS"] },
         }),
         data: expect.objectContaining({
           assignedTechnicianId: TECH_ID,
@@ -234,9 +232,9 @@ describe("POST /tickets/:id/accept", () => {
     expect(mockTicketUpdate).not.toHaveBeenCalled();
   });
 
-  it("tech_n3 acepta ticket del área TICS", async () => {
-    mockTicket({ responsibleArea: "TICS" });
-    const token = makeToken("tech_n3", TECH_ID, "Tec TICs");
+  it("tech_n3 acepta ticket del área DTIC", async () => {
+    mockTicket({ responsibleArea: "DTIC" });
+    const token = makeToken("tech_n3", TECH_ID, "Tec DTIC");
     const res = await request(app)
       .post(`/tickets/${TICKET_ID}/accept`)
       .set("Authorization", `Bearer ${token}`);
@@ -256,8 +254,8 @@ describe("POST /tickets/:id/accept", () => {
   });
 
   it("403 si la categoría está fuera del área del técnico", async () => {
-    mockTicket({ responsibleArea: "TICS" });
-    const token = makeToken("tech_n1", TECH_ID); // tech_n1 NO atiende TICS
+    mockTicket({ responsibleArea: "DTIC" });
+    const token = makeToken("tech_n1", TECH_ID); // tech_n1 NO atiende DTIC
     const res = await request(app)
       .post(`/tickets/${TICKET_ID}/accept`)
       .set("Authorization", `Bearer ${token}`);
@@ -514,7 +512,7 @@ describe("PUT /tickets/:id/escalate", () => {
       .send({
         reason: "El problema requiere plataforma institucional",
         workDone: "Se revisó conectividad y credenciales locales",
-        targetArea: "TICS",
+        targetArea: "DTIC",
         description: "Pasa a DITIC",
       });
     expect(res.status).toBe(200);
@@ -523,7 +521,7 @@ describe("PUT /tickets/:id/escalate", () => {
         data: expect.objectContaining({
           action: "ESCALATED",
           previousArea: "TECHNICIANS",
-          newArea: "TICS",
+          newArea: "DTIC",
           reason: "El problema requiere plataforma institucional",
           workDone: "Se revisó conectividad y credenciales locales",
         }),
@@ -534,7 +532,7 @@ describe("PUT /tickets/:id/escalate", () => {
       expect.objectContaining({
         data: expect.objectContaining({
           status: "escalado",
-          responsibleArea: "TICS",
+          responsibleArea: "DTIC",
           assignedTechnicianId: null,
           assignmentStatus: "available",
         }),
@@ -558,7 +556,7 @@ describe("PUT /tickets/:id/escalate", () => {
     const res = await request(app)
       .put(`/tickets/${TICKET_ID}/escalate`)
       .set("Authorization", `Bearer ${token}`)
-      .send({ workDone: "trabajo previo", targetArea: "TICS" });
+      .send({ workDone: "trabajo previo", targetArea: "DTIC" });
     expect(res.status).toBe(400);
   });
 
@@ -593,7 +591,7 @@ describe("PUT /tickets/:id/escalate", () => {
   });
 
   it("admin puede derivar un ticket a otra área", async () => {
-    mockTicket({ assignedTechnicianId: TECH_ID, responsibleArea: "TICS" });
+    mockTicket({ assignedTechnicianId: TECH_ID, responsibleArea: "DTIC" });
     const token = makeToken("admin", USER_ID, "Administrador");
     const res = await request(app)
       .put(`/tickets/${TICKET_ID}/escalate`)
@@ -642,7 +640,7 @@ describe("POST /admin/tickets/:id/assign", () => {
   });
 
   it("400 si técnico no atiende esa área", async () => {
-    mockTicket({ responsibleArea: "TICS" });
+    mockTicket({ responsibleArea: "DTIC" });
     (fetchUsersByIds as jest.Mock).mockResolvedValueOnce([
       { id: TECH_ID, name: "Téc N1", email: "tec@uta.edu.ec", role: "tech_n1" },
     ]);

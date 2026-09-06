@@ -22,6 +22,7 @@ interface HistoryTicket {
   serviceName: string | null;
   serviceId: string;
   responsibleArea: ResponsibleAreaRef;
+  location: string | null;
   priority: "baja" | "media" | "alta" | "critica";
   status: "abierto" | "en_proceso" | "escalado" | "resuelto" | "cerrado";
   assignmentStatus: string;
@@ -74,7 +75,7 @@ const STATUSES: Array<HistoryTicket["status"]> = [
 // El label del técnico se delega a `getTechnicianDisplayLabel` para
 // garantizar formato uniforme en todos los selects del sistema.
 const PRIORITIES: Array<HistoryTicket["priority"]> = ["baja", "media", "alta", "critica"];
-const AREAS: Array<HistoryTicket["responsibleArea"]> = ["TECHNICIANS", "TICS", "GENERAL"];
+const AREAS: Array<HistoryTicket["responsibleArea"]> = ["TECHNICIANS", "DTIC"];
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";

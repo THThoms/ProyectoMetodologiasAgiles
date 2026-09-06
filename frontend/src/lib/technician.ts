@@ -9,11 +9,8 @@
 //   1. Mostrar el nombre personal del técnico; "Técnico" queda como fallback.
 //   2. El área sale de `technician.areas[]`:
 //        TECHNICIANS -> "Técnicos"
-//        TICS        -> "TICs"
-//        GENERAL     -> "General" (solo si no hay otra área específica).
-//   3. Si el técnico cubre TECHNICIANS+GENERAL muestra "Técnicos".
-//   4. Si el técnico cubre TICS+GENERAL muestra "TICs".
-//   5. Email opcional como desambiguador.
+//        DTIC        -> "DTIC"
+//   3. Email opcional como desambiguador (fuera de filtros de técnicos).
 
 export interface TechnicianRef {
   id: string;
@@ -25,12 +22,11 @@ export interface TechnicianRef {
   role?: string;
 }
 
-export type ResponsibleAreaRef = "TECHNICIANS" | "TICS" | "GENERAL";
+export type ResponsibleAreaRef = "TECHNICIANS" | "DTIC";
 
 const RESPONSIBLE_AREA_LABEL: Record<ResponsibleAreaRef, string> = {
   TECHNICIANS: "Técnicos",
-  TICS: "TICs",
-  GENERAL: "General",
+  DTIC: "DTIC",
 };
 
 export function getResponsibleAreaLabel(area: ResponsibleAreaRef | string): string {
@@ -48,9 +44,8 @@ export function getAccountNameLabel(user: { name?: string; role?: string } | nul
 
 export function getTechnicianAreaLabel(technician: TechnicianRef): string {
   const areas = technician.areas ?? [];
-  if (areas.includes("TICS")) return getResponsibleAreaLabel("TICS");
+  if (areas.includes("DTIC")) return getResponsibleAreaLabel("DTIC");
   if (areas.includes("TECHNICIANS")) return getResponsibleAreaLabel("TECHNICIANS");
-  if (areas.includes("GENERAL")) return getResponsibleAreaLabel("GENERAL");
   return "Sin área";
 }
 

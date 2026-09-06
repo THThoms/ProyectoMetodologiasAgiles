@@ -87,8 +87,7 @@ const STATUS_LABEL: Record<TicketStatus, string> = {
 
 const AREA_LABEL: Record<ResponsibleArea, string> = {
   TECHNICIANS: "Técnicos",
-  TICS: "TICs",
-  GENERAL: "General",
+  DTIC: "DTIC",
 };
 
 function areaLabel(area: ResponsibleArea | null | undefined): string {

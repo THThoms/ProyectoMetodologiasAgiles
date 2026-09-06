@@ -54,9 +54,9 @@ describe("GET /admin/technicians", () => {
     expect(res.body.technicians[0]).toMatchObject({
       id: TECH_ID,
       role: "tech_n1",
-      areas: expect.arrayContaining(["TECHNICIANS", "GENERAL"]),
+      areas: ["TECHNICIANS"],
     });
-    expect(res.body.technicians[1].areas).toEqual(expect.arrayContaining(["TICS", "GENERAL"]));
+    expect(res.body.technicians[1].areas).toEqual(["DTIC"]);
   });
 
   it("403 si no es admin", async () => {
@@ -114,7 +114,7 @@ describe("GET /admin/tickets/history", () => {
     const SERVICE_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     const res = await request(app)
       .get(
-        `/admin/tickets/history?status=resuelto&technicianId=${TECH_ID}&serviceId=${SERVICE_ID}&responsibleArea=TICS&priority=alta`
+        `/admin/tickets/history?status=resuelto&technicianId=${TECH_ID}&serviceId=${SERVICE_ID}&responsibleArea=DTIC&priority=alta`
       )
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
@@ -124,7 +124,7 @@ describe("GET /admin/tickets/history", () => {
           status: "resuelto",
           assignedTechnicianId: TECH_ID,
           serviceId: SERVICE_ID,
-          responsibleArea: "TICS",
+          responsibleArea: "DTIC",
           priority: "alta",
         },
       })

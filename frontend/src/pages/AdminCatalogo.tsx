@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { api, extractApiError } from "../lib/api";
 
-type ResponsibleArea = "TECHNICIANS" | "TICS" | "GENERAL";
+type ResponsibleArea = "TECHNICIANS" | "DTIC";
 
 interface CatalogService {
   id: string;
@@ -25,14 +25,12 @@ interface CatalogService {
 
 const AREA_LABEL: Record<ResponsibleArea, string> = {
   TECHNICIANS: "Técnicos",
-  TICS: "TICs",
-  GENERAL: "General",
+  DTIC: "DTIC",
 };
 
 const AREA_BADGE: Record<ResponsibleArea, string> = {
   TECHNICIANS: "bg-uta-100 text-uta-900",
-  TICS: "bg-sky-100 text-sky-800",
-  GENERAL: "bg-gray-200 text-gray-700",
+  DTIC: "bg-sky-100 text-sky-800",
 };
 
 interface CreateForm {
@@ -202,8 +200,7 @@ export default function AdminCatalogo() {
               }
             >
               <option value="TECHNICIANS">{AREA_LABEL.TECHNICIANS}</option>
-              <option value="TICS">{AREA_LABEL.TICS}</option>
-              <option value="GENERAL">{AREA_LABEL.GENERAL}</option>
+              <option value="DTIC">{AREA_LABEL.DTIC}</option>
             </select>
           </div>
           <div className="sm:col-span-1 flex items-end">
@@ -281,8 +278,7 @@ export default function AdminCatalogo() {
                         }
                       >
                         <option value="TECHNICIANS">{AREA_LABEL.TECHNICIANS}</option>
-                        <option value="TICS">{AREA_LABEL.TICS}</option>
-                        <option value="GENERAL">{AREA_LABEL.GENERAL}</option>
+                        <option value="DTIC">{AREA_LABEL.DTIC}</option>
                       </select>
                     ) : (
                       <span

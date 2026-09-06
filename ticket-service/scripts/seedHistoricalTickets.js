@@ -307,10 +307,12 @@ async function main() {
       const updatedAt = closedAt ?? resolvedAt ?? contributionAt;
       const article = resolvedAt ? articleForService(service, articles, serial) : null;
       const shouldEscalate = ticketIndex % 5 === 0;
+      // Escalamiento simulado: si el servicio es TECHNICIANS lo hacemos venir de
+      // DTIC, y viceversa. Ya no existe el área GENERAL en el modelo.
       const previousArea = shouldEscalate
-        ? service.responsibleArea === ResponsibleArea.GENERAL
-          ? ResponsibleArea.TECHNICIANS
-          : ResponsibleArea.GENERAL
+        ? service.responsibleArea === ResponsibleArea.TECHNICIANS
+          ? ResponsibleArea.DTIC
+          : ResponsibleArea.TECHNICIANS
         : null;
 
       touchedMonths.add(`${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, "0")}`);

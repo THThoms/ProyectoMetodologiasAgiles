@@ -44,7 +44,7 @@ function isAdminEmail(email: string): boolean {
 
 const MICROSOFT_ACCOUNT_PROFILES: Record<string, { name: string; role: Role }> = {
   "bparedes8678@uta.edu.ec": { name: "Belén Paredes", role: Role.user },
-  // tech_n1 atiende el área TECHNICIANS + GENERAL en ticket-service/areaService.
+  // tech_n1 atiende el área TECHNICIANS en ticket-service/areaService.
   "mgarcia7795@uta.edu.ec": { name: "Manolo García", role: Role.tech_n1 },
 };
 

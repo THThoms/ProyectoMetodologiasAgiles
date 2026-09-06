@@ -128,7 +128,7 @@ describe("POST /tickets", () => {
       name: "Servicio sin regla",
       isActive: true,
       levelEntry: "N2",
-      responsibleArea: "TICS",
+      responsibleArea: "DTIC",
       routingRule: null,
     });
     (generateTicketNumber as jest.Mock).mockResolvedValue("TK-FALLBACK-001");
@@ -154,7 +154,7 @@ describe("POST /tickets", () => {
         data: expect.objectContaining({
           serviceId: SERVICE_ID,
           levelAssigned: "N2",
-          responsibleArea: "TICS",
+          responsibleArea: "DTIC",
         }),
       })
     );

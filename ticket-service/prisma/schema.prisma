@@ -46,12 +46,12 @@ enum Priority {
   critica
 }
 
-// Sprint 2 (rev): área responsable del ticket. Espeja al enum de catalog-service.
-// Reemplaza el filtro por nivel N1-N4 como criterio principal de asignación.
+// Sprint 3+: área responsable del ticket. Espeja al enum de catalog-service.
+// TICS fue renombrado a DTIC; GENERAL fue eliminado (registros migrados a
+// TECHNICIANS) — ambos cambios se aplicaron con la migración SQL.
 enum ResponsibleArea {
   TECHNICIANS
-  TICS
-  GENERAL
+  DTIC
 }
 
 // Sprint 2 (rev): estado de asignación independiente del status del ticket.
@@ -83,7 +83,7 @@ model Ticket {
   status                 TicketStatus     @default(abierto)
   priority               Priority         @default(media)
   // Sprint 2 (rev) - asignación por categoría/área:
-  responsibleArea        ResponsibleArea  @default(GENERAL) @map("responsible_area")
+  responsibleArea        ResponsibleArea  @default(TECHNICIANS) @map("responsible_area")
   assignmentStatus       AssignmentStatus @default(available) @map("assignment_status")
   assignedTechnicianId   String?          @map("assigned_technician_id") @db.Uuid
   assignedTechnicianName String?          @map("assigned_technician_name")
@@ -211,18 +211,26 @@ model EmailOutbox {
 }
 
 // -----------------------------------------------------------------------------
-// attachments - Imágenes adjuntas. Guardamos `file_path` relativo a /app/uploads
-// para que el contenedor pueda servirlas via `/uploads/<file>`.
+// attachments - Imágenes adjuntas al ticket.
+// Sprint 3+: se prioriza `image_url` (URL absoluta o relativa). `file_path` se
+// mantiene para compatibilidad con adjuntos históricos que vivían en disco
+// local (/app/uploads). El backend prioriza image_url; si es null cae a
+// /uploads/<file_path>. `storage_provider` documenta dónde vive la imagen:
+//   - "local"      → disco montado en el contenedor de ticket-service
+//   - "cloudinary" → CDN externo (Cloudinary), URL absoluta HTTPS
+// Nueva imagen NUNCA se guarda como Base64.
 // -----------------------------------------------------------------------------
 model Attachment {
-  id          String   @id @default(uuid()) @db.Uuid
-  ticketId    String   @map("ticket_id") @db.Uuid
-  filePath    String   @map("file_path")
-  fileSize    Int      @map("file_size")
-  mimeType    String   @map("mime_type")
-  createdAt   DateTime @default(now()) @map("created_at")
+  id              String   @id @default(uuid()) @db.Uuid
+  ticketId        String   @map("ticket_id") @db.Uuid
+  filePath        String?  @map("file_path")
+  imageUrl        String?  @map("image_url")
+  storageProvider String   @default("local") @map("storage_provider")
+  fileSize        Int      @map("file_size")
+  mimeType        String   @map("mime_type")
+  createdAt       DateTime @default(now()) @map("created_at")
 
-  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket          Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@map("attachments")
   @@index([ticketId])

@@ -15,12 +15,12 @@ const services: Array<{
 }> = [
   { name: "Red e Internet",           description: "Conectividad de red, WiFi institucional, problemas de acceso a Internet.", levelEntry: Level.N1, responsibleArea: ResponsibleArea.TECHNICIANS, priorityHigh: Level.N2, priorityCritical: Level.N3 },
   { name: "Internet / Conectividad",  description: "Problemas de red, WiFi institucional, VPN.",                                levelEntry: Level.N3, responsibleArea: ResponsibleArea.TECHNICIANS },
-  { name: "Correo Electrónico",       description: "Acceso, configuración y problemas con el correo @uta.edu.ec.",              levelEntry: Level.N2, responsibleArea: ResponsibleArea.TICS },
+  { name: "Correo Electrónico",       description: "Acceso, configuración y problemas con el correo @uta.edu.ec.",              levelEntry: Level.N2, responsibleArea: ResponsibleArea.DTIC },
   { name: "Equipos / Hardware",       description: "Computadoras, impresoras, periféricos.",                                    levelEntry: Level.N1, responsibleArea: ResponsibleArea.TECHNICIANS, priorityHigh: Level.N2 },
-  { name: "Software Institucional",   description: "Software académico/administrativo licenciado por UTA.",                     levelEntry: Level.N2, responsibleArea: ResponsibleArea.TICS },
-  { name: "MOODLE",                   description: "Plataforma de aulas virtuales.",                                            levelEntry: Level.N3, responsibleArea: ResponsibleArea.TICS },
-  { name: "Calificaciones (SGA)",     description: "Sistema de Gestión Académica - notas y matrícula.",                          levelEntry: Level.N3, responsibleArea: ResponsibleArea.TICS },
-  { name: "Seguridad de la Información", description: "Incidentes de seguridad, accesos sospechosos, malware.",                 levelEntry: Level.N3, responsibleArea: ResponsibleArea.TICS, priorityHigh: Level.N3, priorityCritical: Level.N4, isCritical: true },
+  { name: "Software Institucional",   description: "Software académico/administrativo licenciado por UTA.",                     levelEntry: Level.N2, responsibleArea: ResponsibleArea.DTIC },
+  { name: "MOODLE",                   description: "Plataforma de aulas virtuales.",                                            levelEntry: Level.N3, responsibleArea: ResponsibleArea.DTIC },
+  { name: "Calificaciones (SGA)",     description: "Sistema de Gestión Académica - notas y matrícula.",                          levelEntry: Level.N3, responsibleArea: ResponsibleArea.DTIC },
+  { name: "Seguridad de la Información", description: "Incidentes de seguridad, accesos sospechosos, malware.",                 levelEntry: Level.N3, responsibleArea: ResponsibleArea.DTIC, priorityHigh: Level.N3, priorityCritical: Level.N4, isCritical: true },
 ];
 
 // HU-10 - Artículos iniciales para la base de conocimiento institucional.
@@ -320,6 +320,36 @@ const knowledgeArticles: Array<{
   },
 ];
 
+// Sprint 3+ — Catálogo oficial de ubicaciones físicas de la FISEI donde
+// pueden originarse tickets. Idempotente: se upsertea por `name` único.
+// El listado (23) proviene del área académica de la facultad; edición y
+// altas nuevas quedan disponibles vía panel admin (/api/catalog/locations).
+const officialLocations: string[] = [
+  "Laboratorio 1",
+  "Laboratorio 2",
+  "Laboratorio 3",
+  "Laboratorio 4",
+  "Laboratorio 5",
+  "Laboratorio 6",
+  "Laboratorio 7",
+  "Laboratorio 8",
+  "Laboratorio de Robótica y Redes Industriales",
+  "Laboratorio CTT - FISEI (Centro de Transferencia de Tecnología)",
+  "Laboratorio CADME (Centro de Apoyo al Desarrollo Metal Mecánico)",
+  "Laboratorio de Instrumentación Industrial",
+  "Laboratorio de Electrónica y Telecomunicaciones",
+  "Laboratorio de Mecanismos",
+  "Decanato y Subdecanato",
+  "Secretaría de la Facultad",
+  "Coordinaciones de Carrera (Software, Telecomunicaciones, Industrial, Robótica/Mecatrónica)",
+  "Unidad de Titulación y Prácticas Preprofesionales",
+  "Sala de Profesores",
+  "Biblioteca de la FISEI",
+  "Auditorio de la Facultad",
+  "Unidad de Investigación Operativa (FISEI)",
+  "Salas Audiovisuales",
+];
+
 async function main() {
   for (const s of services) {
     const ruleData = {
@@ -397,6 +427,22 @@ async function main() {
   }
   console.log(
     `Seed knowledge: ${created} creados, ${skipped} ya existían (omitidos), ${missingService} sin servicio (omitidos).`
+  );
+
+  // Sprint 3+ — Ubicaciones oficiales de la FISEI (idempotente por `name`).
+  // Un `upsert` con `update: {}` respeta cambios manuales del admin (renombre,
+  // desactivación) y solo crea las que no existen; ejecutar el seed N veces
+  // no genera duplicados ni pisa el estado de la BD.
+  let locationsCreated = 0;
+  for (const name of officialLocations) {
+    const existing = await prisma.location.findUnique({ where: { name } });
+    if (!existing) {
+      await prisma.location.create({ data: { name } });
+      locationsCreated++;
+    }
+  }
+  console.log(
+    `Seed locations: ${locationsCreated} creadas, ${officialLocations.length - locationsCreated} ya existían.`
   );
 }
 
