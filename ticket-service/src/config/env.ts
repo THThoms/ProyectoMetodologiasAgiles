@@ -47,4 +47,22 @@ export const env = {
       pass: process.env.SMTP_PASS ?? "",
     },
   },
+
+  // Almacenamiento de imágenes adjuntas.
+  // STORAGE_MODE:
+  //   - "local" (default): disco montado en el contenedor. La URL devuelta es
+  //     relativa (/uploads/<file>) y se sirve por express.static con JWT.
+  //   - "cloudinary": sube al CDN de Cloudinary y devuelve URL absoluta HTTPS.
+  //     Requiere `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`,
+  //     `CLOUDINARY_API_SECRET` y tener la librería `cloudinary` instalada.
+  //     Si falta la lib, cae a modo `local` con warning.
+  storage: {
+    mode: (process.env.STORAGE_MODE ?? "local").toLowerCase() as "local" | "cloudinary",
+    cloudinary: {
+      cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? "",
+      apiKey: process.env.CLOUDINARY_API_KEY ?? "",
+      apiSecret: process.env.CLOUDINARY_API_SECRET ?? "",
+      folder: process.env.CLOUDINARY_FOLDER ?? "servicedesk-uta",
+    },
+  },
 };

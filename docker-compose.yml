@@ -144,6 +144,12 @@ services:
       SMTP_SECURE: ${SMTP_SECURE:-false}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
+      # Sprint 3+ - Almacenamiento de imágenes (default local; cloudinary opcional).
+      STORAGE_MODE: ${STORAGE_MODE:-local}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-servicedesk-uta}
     volumes:
       - ticket-uploads:/app/uploads
     networks:

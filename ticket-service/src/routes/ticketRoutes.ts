@@ -15,6 +15,7 @@ import {
   InvalidLevelError,
 } from "../services/routingService";
 import { recordTicketEvent, describeEvent } from "../services/historyService";
+import { getStorageAdapter, StoredImage } from "../services/storageService";
 import { EventAction, Level, Prisma, Priority, TicketStatus } from "@prisma/client";
 import { env } from "../config/env";
 
@@ -112,7 +113,7 @@ router.post(
     // un servicio nuevo creado sin regla legacy bloquee la creación.
     let level: Level;
     let serviceName: string;
-    let responsibleArea: import("@prisma/client").ResponsibleArea = "GENERAL" as never;
+    let responsibleArea: import("@prisma/client").ResponsibleArea = "TECHNICIANS";
     try {
       const userToken = (req.headers.authorization ?? "").slice("Bearer ".length).trim();
       const service = await fetchService(serviceId, userToken);
@@ -130,7 +131,7 @@ router.post(
         level = fallback;
       }
       serviceName = service.name;
-      responsibleArea = (service.responsibleArea ?? "GENERAL") as never;
+      responsibleArea = (service.responsibleArea ?? "TECHNICIANS") as import("@prisma/client").ResponsibleArea;
     } catch (err) {
       cleanupFiles(files);
       if (err instanceof ServiceNotFoundError) {
@@ -146,6 +147,21 @@ router.post(
       }
       console.error("Error consultando catalog-service:", err);
       return res.status(502).json({ error: "No se pudo validar el servicio en el catálogo" });
+    }
+
+    // Sprint 3+: subir cada imagen al storage configurado ANTES de la
+    // transacción del ticket. Si el storage falla, se limpian los adjuntos
+    // ya subidos (best-effort) y se cancela la creación del ticket.
+    const storage = getStorageAdapter();
+    let uploaded: StoredImage[];
+    try {
+      uploaded = await Promise.all(files.map((f) => storage.upload(f)));
+    } catch (err) {
+      cleanupFiles(files);
+      console.error("[tickets] error al subir imágenes:", err);
+      return res
+        .status(502)
+        .json({ error: "No se pudieron subir las imágenes al almacenamiento" });
     }
 
     try {
@@ -168,10 +184,12 @@ router.post(
             assignmentStatus: "available",
             ...(priority !== undefined ? { priority } : {}),
             attachments: {
-              create: files.map((f) => ({
-                filePath: path.basename(f.path),
-                fileSize: f.size,
-                mimeType: f.mimetype,
+              create: uploaded.map((u, i) => ({
+                imageUrl: u.imageUrl,
+                filePath: u.filePath ?? null,
+                storageProvider: u.storageProvider,
+                fileSize: files[i].size,
+                mimeType: files[i].mimetype,
               })),
             },
           },
