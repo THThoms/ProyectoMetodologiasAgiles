@@ -24,16 +24,15 @@ enum Level {
 }
 
 // -----------------------------------------------------------------------------
-// Sprint 2 (rev): área responsable de atender el servicio/categoría.
-// Reemplaza el filtro por nivel N1-N4 como criterio principal de asignación.
-// TECHNICIANS: hardware, redes, equipos, impresoras, WiFi.
-// TICS:        plataformas institucionales, sistema académico, accesos, MOODLE, SGA.
-// GENERAL:     cualquier técnico vigente puede tomarlo.
+// Sprint 3+: área responsable de atender el servicio/categoría.
+// TECHNICIANS: hardware, redes, equipos, impresoras, WiFi, aulas y laboratorios.
+// DTIC:        plataformas institucionales, sistema académico, accesos, MOODLE, SGA.
+// (Antes existía TICS -> renombrado a DTIC en migración; y GENERAL,
+//  eliminado en migración reasignando esos registros a TECHNICIANS.)
 // -----------------------------------------------------------------------------
 enum ResponsibleArea {
   TECHNICIANS
-  TICS
-  GENERAL
+  DTIC
 }
 
 // -----------------------------------------------------------------------------
@@ -83,6 +82,24 @@ model RoutingRule {
   service           Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   @@map("routing_rules")
+}
+
+// -----------------------------------------------------------------------------
+// Sprint 3+ - Catálogo de ubicaciones físicas donde puede originarse un
+// ticket (laboratorios, aulas, oficinas, biblioteca, etc.). Se persiste aquí
+// porque catalog_db es la fuente de verdad institucional; ticket_db guarda
+// solo el nombre (denormalizado) para no crear FK cruzada entre microservicios.
+// `is_active = false` = soft delete (deja de mostrarse en el combobox).
+// -----------------------------------------------------------------------------
+model Location {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("locations")
+  @@index([isActive])
 }
 
 // -----------------------------------------------------------------------------

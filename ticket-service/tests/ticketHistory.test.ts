@@ -151,7 +151,7 @@ describe("GET /tickets/history/:id - HU-09", () => {
         previousLevel: "N1",
         newLevel: "N2",
         previousArea: "TECHNICIANS",
-        newArea: "TICS",
+        newArea: "DTIC",
         reason: "Caso complejo",
         performedBy: "tech-id",
         performedByName: "Técnico Nivel 1",
@@ -173,7 +173,7 @@ describe("GET /tickets/history/:id - HU-09", () => {
       performedBy: { id: "tech-id", name: "Técnico Nivel 1" },
     });
     expect(res.body.history[0].description).toContain("Técnicos");
-    expect(res.body.history[0].description).toContain("TICs");
+    expect(res.body.history[0].description).toContain("DTIC");
     expect(res.body.history[0].description).not.toContain("Nivel 1");
   });
 

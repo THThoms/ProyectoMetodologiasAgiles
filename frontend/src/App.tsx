@@ -10,6 +10,8 @@ import MisTicketsAceptados from "./pages/MisTicketsAceptados";
 import AdminStats from "./pages/AdminStats";
 import AdminHistorial from "./pages/AdminHistorial";
 import AdminReporteTecnicos from "./pages/AdminReporteTecnicos";
+import AdminKnowledge from "./pages/AdminKnowledge";
+import AdminUbicaciones from "./pages/AdminUbicaciones";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { getCurrentUser, landingRouteFor } from "./lib/auth";
 
@@ -95,6 +97,22 @@ export default function App() {
         element={
           <ProtectedRoute roles={["admin"]}>
             <AdminCatalogo />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/conocimiento"
+        element={
+          <ProtectedRoute roles={["admin"]}>
+            <AdminKnowledge />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/ubicaciones"
+        element={
+          <ProtectedRoute roles={["admin"]}>
+            <AdminUbicaciones />
           </ProtectedRoute>
         }
       />

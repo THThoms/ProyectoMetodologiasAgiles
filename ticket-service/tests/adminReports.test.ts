@@ -159,8 +159,8 @@ describe("GET /admin/reports/technicians/:technicianId - reporte real", () => {
     expect(res.body).toHaveProperty("byStatus");
     expect(res.body).toHaveProperty("byPriority");
     expect(res.body).toHaveProperty("byMonth");
-    // Áreas deducidas del rol (tech_n1 -> TECHNICIANS + GENERAL)
-    expect(res.body.technician.areas).toEqual(expect.arrayContaining(["TECHNICIANS", "GENERAL"]));
+    // Áreas deducidas del rol (Sprint 3+: tech_n1 -> solo TECHNICIANS)
+    expect(res.body.technician.areas).toEqual(["TECHNICIANS"]);
   });
 
   it("filtra tickets por rango de createdAt cuando se pasan from/to", async () => {

@@ -30,7 +30,7 @@ interface Technician {
   name: string;
   email: string;
   role: string;
-  areas: ("TECHNICIANS" | "TICS" | "GENERAL")[];
+  areas: ("TECHNICIANS" | "DTIC")[];
   isActive: boolean;
 }
 
@@ -53,7 +53,7 @@ interface ReportTicket {
   title: string;
   detail: string | null;
   serviceName: string | null;
-  responsibleArea: "TECHNICIANS" | "TICS" | "GENERAL";
+  responsibleArea: "TECHNICIANS" | "DTIC";
   priority: "baja" | "media" | "alta" | "critica";
   status: "abierto" | "en_proceso" | "escalado" | "resuelto" | "cerrado";
   requesterName: string | null;
@@ -386,10 +386,9 @@ export default function AdminReporteTecnicos() {
     if (!report) return "";
     const r = report;
     const generatedAtStr = formatDateTime(r.generatedAt);
-    const areaLabel = r.technician.areas
-      .filter((a) => a !== "GENERAL")
-      .map(getResponsibleAreaLabel)
-      .join(" / ") || getResponsibleAreaLabel(r.technician.areas[0] ?? "GENERAL");
+    const areaLabel =
+      r.technician.areas.map(getResponsibleAreaLabel).join(" / ") ||
+      getResponsibleAreaLabel(r.technician.areas[0] ?? "TECHNICIANS");
 
     const summaryRows: Array<[string, string]> = [
       ["Tickets asignados", String(r.summary.ticketsAssigned)],
@@ -538,11 +537,11 @@ export default function AdminReporteTecnicos() {
   h1 { font-size:16px; margin:0; }
   h2 { font-size:14px; margin:18px 0 8px; border-bottom:1px solid #ccc; padding-bottom:4px; }
   /* --- Encabezado en 4 bloques --- */
-  header.doc { border:1px solid #9c1f2c; border-radius:4px; overflow:hidden; margin-bottom:18px; page-break-inside:avoid; }
-  header .inst-block { background:#fbeaec; border-bottom:2px solid #9c1f2c; padding:12px 16px; text-align:center; }
-  header .inst-block .inst { font-size:11px; font-weight:bold; letter-spacing:2px; color:#9c1f2c; text-transform:uppercase; }
+  header.doc { border:1px solid #1e3a8a; border-radius:4px; overflow:hidden; margin-bottom:18px; page-break-inside:avoid; }
+  header .inst-block { background:#eff6ff; border-bottom:2px solid #1e3a8a; padding:12px 16px; text-align:center; }
+  header .inst-block .inst { font-size:11px; font-weight:bold; letter-spacing:2px; color:#1e3a8a; text-transform:uppercase; }
   header .inst-block .sys { font-size:11px; color:#555; margin-top:2px; }
-  header .inst-block h1 { font-size:15px; margin-top:8px; text-transform:uppercase; letter-spacing:1px; color:#9c1f2c; }
+  header .inst-block h1 { font-size:15px; margin-top:8px; text-transform:uppercase; letter-spacing:1px; color:#1e3a8a; }
   header .section { padding:10px 16px; border-bottom:1px solid #e5e7eb; }
   header .section:last-child { border-bottom:none; }
   header .section .sec-title { font-size:10px; font-weight:bold; letter-spacing:2px; color:#666; text-transform:uppercase; margin:0 0 6px; }
@@ -550,7 +549,7 @@ export default function AdminReporteTecnicos() {
   header .field { flex:1 1 200px; }
   header .field .label { font-size:10px; color:#666; margin:0; }
   header .field .value { font-size:12px; color:#111; font-weight:600; margin:1px 0 0; }
-  header .field .value.big { font-size:16px; font-weight:bold; color:#9c1f2c; }
+  header .field .value.big { font-size:16px; font-weight:bold; color:#1e3a8a; }
   /* --- Tablas --- */
   table.meta { width:100%; border-collapse:collapse; margin:12px 0 16px; }
   table.meta th, table.meta td { text-align:left; padding:4px 8px; border:1px solid #ddd; vertical-align:top; }
@@ -679,8 +678,8 @@ export default function AdminReporteTecnicos() {
   }
 
   const areaLabel = selectedTech
-    ? (selectedTech.areas.filter((a) => a !== "GENERAL").map(getResponsibleAreaLabel).join(" / ") ||
-        getResponsibleAreaLabel(selectedTech.areas[0] ?? "GENERAL"))
+    ? (selectedTech.areas.map(getResponsibleAreaLabel).join(" / ") ||
+        getResponsibleAreaLabel(selectedTech.areas[0] ?? "TECHNICIANS"))
     : "—";
 
   return (

@@ -8,10 +8,19 @@ jest.mock("../src/db/client", () => ({
     knowledgeArticle: {
       findMany: jest.fn(),
       count: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      create: jest.fn(),
     },
     service: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
+    },
+    location: {
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
     },
   },
 }));
@@ -124,25 +133,47 @@ describe("GET /knowledge/search - HU-10", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Validaciones de q
+  // Sprint 3+: q es OPCIONAL — se puede consultar solo por categoría o sin filtros
   // -------------------------------------------------------------------------
-  it("400 sin q", async () => {
+  it("200 sin q ni serviceId: lista todos los artículos activos", async () => {
+    mockResults([SAMPLE_VPN]);
     const token = makeToken("tech_n1");
     const res = await request(app)
       .get("/knowledge/search")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body.query).toBe("");
+    // where solo debería tener isActive:true (sin AND)
+    const call = (prisma.knowledgeArticle.findMany as jest.Mock).mock.calls[0][0];
+    expect(call.where.isActive).toBe(true);
+    expect(call.where.AND).toBeUndefined();
   });
 
-  it("400 con q vacío o solo espacios", async () => {
+  it("200 solo con serviceId: lista todos los artículos de esa categoría", async () => {
+    mockResults([SAMPLE_VPN]);
+    const token = makeToken("tech_n1");
+    const svcId = "22222222-2222-4222-8222-222222222222";
+    const res = await request(app)
+      .get(`/knowledge/search?serviceId=${svcId}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    const call = (prisma.knowledgeArticle.findMany as jest.Mock).mock.calls[0][0];
+    expect(call.where.isActive).toBe(true);
+    expect(call.where.AND).toEqual([{ serviceId: svcId }]);
+  });
+
+  it("200 con q vacío o solo espacios (equivale a sin filtro de texto)", async () => {
+    mockResults([]);
     const token = makeToken("tech_n1");
     const res = await request(app)
       .get("/knowledge/search?q=%20%20%20")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    const call = (prisma.knowledgeArticle.findMany as jest.Mock).mock.calls[0][0];
+    expect(call.where.AND).toBeUndefined();
   });
 
-  it("400 con q de 1 caracter (mínimo 2)", async () => {
+  it("400 con q de 1 caracter (si se envía texto debe tener >=2)", async () => {
     const token = makeToken("tech_n1");
     const res = await request(app)
       .get("/knowledge/search?q=a")
@@ -234,5 +265,139 @@ describe("GET /knowledge/search - HU-10", () => {
     const call = (prisma.knowledgeArticle.findMany as jest.Mock).mock.calls[0][0];
     expect(call.skip).toBe(5);
     expect(call.take).toBe(5);
+  });
+});
+
+// =============================================================================
+// Sprint 3+ — Administración de la Base de Conocimiento
+// =============================================================================
+describe("Sprint 3+ · GET /knowledge/admin/list", () => {
+  it("admin lista con includeInactive", async () => {
+    mockResults([SAMPLE_VPN]);
+    const token = makeToken("admin");
+    const res = await request(app)
+      .get("/knowledge/admin/list?includeInactive=true")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    const call = (prisma.knowledgeArticle.findMany as jest.Mock).mock.calls[0][0];
+    // Con includeInactive no debe filtrar por isActive.
+    expect(call.where.isActive).toBeUndefined();
+  });
+
+  it("por defecto solo activos", async () => {
+    mockResults([]);
+    const token = makeToken("admin");
+    await request(app)
+      .get("/knowledge/admin/list")
+      .set("Authorization", `Bearer ${token}`);
+    const call = (prisma.knowledgeArticle.findMany as jest.Mock).mock.calls[0][0];
+    expect(call.where.isActive).toBe(true);
+  });
+
+  it("403 técnico no puede acceder al admin/list", async () => {
+    const token = makeToken("tech_n1");
+    const res = await request(app)
+      .get("/knowledge/admin/list")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("Sprint 3+ · PUT /knowledge/:id", () => {
+  const KID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+  it("admin actualiza título y solución", async () => {
+    (prisma.knowledgeArticle.update as jest.Mock).mockResolvedValue({
+      ...SAMPLE_VPN,
+      id: KID,
+      title: "VPN — Nueva guía",
+      solution: "Pasos actualizados.",
+      isActive: true,
+    });
+    const token = makeToken("admin");
+    const res = await request(app)
+      .put(`/knowledge/${KID}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "VPN — Nueva guía", solution: "Pasos actualizados." });
+    expect(res.status).toBe(200);
+    expect(res.body.article.title).toBe("VPN — Nueva guía");
+    const call = (prisma.knowledgeArticle.update as jest.Mock).mock.calls[0][0];
+    expect(call.where).toEqual({ id: KID });
+    expect(call.data).toMatchObject({ title: "VPN — Nueva guía", solution: "Pasos actualizados." });
+  });
+
+  it("403 si técnico intenta editar", async () => {
+    const token = makeToken("tech_n1");
+    const res = await request(app)
+      .put(`/knowledge/${KID}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "hack" });
+    expect(res.status).toBe(403);
+    expect(prisma.knowledgeArticle.update).not.toHaveBeenCalled();
+  });
+
+  it("400 con id no UUID", async () => {
+    const token = makeToken("admin");
+    const res = await request(app)
+      .put("/knowledge/no-uuid")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "algo" });
+    expect(res.status).toBe(400);
+  });
+
+  it("404 si el artículo no existe", async () => {
+    (prisma.knowledgeArticle.update as jest.Mock).mockRejectedValue(
+      Object.assign(new Error("nf"), { code: "P2025" })
+    );
+    // Simulamos que es una PrismaClientKnownRequestError
+    (prisma.knowledgeArticle.update as jest.Mock).mockRejectedValue(
+      Object.assign(
+        new (require("@prisma/client").Prisma.PrismaClientKnownRequestError)(
+          "not found",
+          { code: "P2025", clientVersion: "test", meta: {} }
+        )
+      )
+    );
+    const token = makeToken("admin");
+    const res = await request(app)
+      .put(`/knowledge/${KID}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "nuevo título" });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("Sprint 3+ · DELETE /knowledge/:id (soft delete)", () => {
+  const KID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+  it("admin desactiva (isActive=false)", async () => {
+    (prisma.knowledgeArticle.update as jest.Mock).mockResolvedValue({
+      id: KID,
+      isActive: false,
+    });
+    const token = makeToken("admin");
+    const res = await request(app)
+      .delete(`/knowledge/${KID}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.article).toEqual({ id: KID, isActive: false });
+    const call = (prisma.knowledgeArticle.update as jest.Mock).mock.calls[0][0];
+    expect(call.data).toEqual({ isActive: false });
+  });
+
+  it("403 técnico no puede eliminar", async () => {
+    const token = makeToken("tech_n1");
+    const res = await request(app)
+      .delete(`/knowledge/${KID}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+
+  it("403 usuario no puede eliminar", async () => {
+    const token = makeToken("user");
+    const res = await request(app)
+      .delete(`/knowledge/${KID}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
   });
 });

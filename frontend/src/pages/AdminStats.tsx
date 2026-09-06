@@ -111,9 +111,8 @@ const PRIORITY_COLORS: Record<string, string> = {
   critica: "#dc2626",
 };
 const AREA_COLORS: Record<string, string> = {
-  TECHNICIANS: "#9c1f2c",
-  TICS: "#0ea5e9",
-  GENERAL: "#64748b",
+  TECHNICIANS: "#1e3a8a",
+  DTIC: "#0ea5e9",
 };
 
 export default function AdminStats() {
@@ -222,7 +221,7 @@ export default function AdminStats() {
     return stats.byResponsibleArea.map((b) => ({
       label: getResponsibleAreaLabel(b.area),
       value: b.count,
-      color: AREA_COLORS[b.area] ?? "#9c1f2c",
+      color: AREA_COLORS[b.area] ?? "#1e3a8a",
     }));
   }, [stats]);
 

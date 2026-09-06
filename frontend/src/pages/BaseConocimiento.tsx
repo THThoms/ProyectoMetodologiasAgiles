@@ -1,8 +1,14 @@
-// HU-10 - Base de Conocimiento institucional.
-// Consume GET /api/knowledge/search. La búsqueda solo se dispara cuando el
-// usuario presiona "Buscar" o Enter (no en cada tecla) para mantener un
-// patrón de búsqueda estricta y controlada.
-import { useEffect, useState } from "react";
+// HU-10 (Sprint 3+) - Base de Conocimiento institucional.
+//
+// La búsqueda por TEXTO es opcional: si el usuario solo elige una categoría,
+// se listan automáticamente todos los artículos activos de esa categoría.
+// El backend acepta:
+//   - solo `q`             → texto en todas las categorías
+//   - solo `serviceId`     → todos los artículos de esa categoría
+//   - `q` + `serviceId`    → texto dentro de esa categoría
+//   - sin filtros          → todos los artículos activos (paginado)
+
+import { useCallback, useEffect, useState } from "react";
 import { Layout } from "../components/Layout";
 import { api, extractApiError } from "../lib/api";
 
@@ -49,13 +55,12 @@ export default function BaseConocimiento() {
   const [serviceId, setServiceId] = useState("");
   const [services, setServices] = useState<CatalogServiceItem[]>([]);
 
-  // Resultado disparado por submit; null = sin búsqueda aún.
   const [data, setData] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<string | null>(null);
 
-  // Carga inicial: catálogo de servicios para el filtro (opcional).
+  // Carga inicial: catálogo de servicios para el filtro.
   useEffect(() => {
     api
       .get<{ services: CatalogServiceItem[] }>("/api/catalog/services")
@@ -65,21 +70,25 @@ export default function BaseConocimiento() {
       });
   }, []);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  // Función de búsqueda reusable, sin `q` obligatorio.
+  const runSearch = useCallback(async (q: string, svc: string) => {
     setError(null);
     setValidation(null);
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setValidation("Ingresa al menos 2 caracteres para buscar.");
+    const trimmed = q.trim();
+    // Solo validamos longitud si el usuario tipeó algo. Vacío = permitido.
+    if (trimmed.length > 0 && trimmed.length < 2) {
+      setValidation("Si escribes texto, debe tener al menos 2 caracteres.");
       setData(null);
       return;
     }
     setLoading(true);
     try {
-      const params = new URLSearchParams({ q: trimmed });
-      if (serviceId) params.set("serviceId", serviceId);
-      const r = await api.get<SearchResponse>(`/api/knowledge/search?${params.toString()}`);
+      const params = new URLSearchParams();
+      if (trimmed) params.set("q", trimmed);
+      if (svc) params.set("serviceId", svc);
+      const qs = params.toString();
+      const url = qs ? `/api/knowledge/search?${qs}` : "/api/knowledge/search";
+      const r = await api.get<SearchResponse>(url);
       setData(r.data);
     } catch (err) {
       setError(extractApiError(err));
@@ -87,6 +96,21 @@ export default function BaseConocimiento() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await runSearch(query, serviceId);
+  }
+
+  // Cuando el usuario cambia la CATEGORÍA, refrescamos automáticamente:
+  //  - si hay texto válido, aplica ambos filtros
+  //  - si no hay texto, lista todos los artículos de esa categoría
+  //  - "Todos los servicios" muestra todo lo que el texto (si existe) permita
+  function handleServiceChange(nextServiceId: string) {
+    setServiceId(nextServiceId);
+    // Trigger inmediato sin necesidad de presionar "Buscar"
+    void runSearch(query, nextServiceId);
   }
 
   function reset() {
@@ -107,14 +131,17 @@ export default function BaseConocimiento() {
           </h1>
           <p className="mt-1 text-sm text-gray-600">
             Consulta soluciones registradas para incidencias frecuentes.
+            Puedes filtrar solo por categoría o combinar categoría con palabras clave.
           </p>
         </div>
 
         {/* Buscador */}
         <form onSubmit={handleSubmit} className="card mb-4">
-          <div className="grid gap-3 sm:grid-cols-[1fr_220px_auto] sm:items-end">
+          <div className="grid gap-3 sm:grid-cols-[1fr_240px_auto] sm:items-end">
             <div>
-              <label htmlFor="kb-query" className="label">Palabras clave</label>
+              <label htmlFor="kb-query" className="label">
+                Palabras clave <span className="text-xs font-normal text-gray-500">(opcional)</span>
+              </label>
               <input
                 id="kb-query"
                 type="text"
@@ -127,15 +154,15 @@ export default function BaseConocimiento() {
               />
             </div>
             <div>
-              <label htmlFor="kb-service" className="label">Servicio (opcional)</label>
+              <label htmlFor="kb-service" className="label">Categoría / servicio</label>
               <select
                 id="kb-service"
                 className="input"
                 value={serviceId}
-                onChange={(e) => setServiceId(e.target.value)}
+                onChange={(e) => handleServiceChange(e.target.value)}
                 disabled={loading || services.length === 0}
               >
-                <option value="">Todos los servicios</option>
+                <option value="">Todas las categorías</option>
                 {services.map((s) => (
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
@@ -190,7 +217,7 @@ export default function BaseConocimiento() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                 d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
-            Ingresa una palabra clave para buscar soluciones.
+            Selecciona una categoría o escribe palabras clave para consultar la base de conocimiento.
           </div>
         )}
 
@@ -198,8 +225,20 @@ export default function BaseConocimiento() {
         {!loading && !error && data && (
           <div>
             <p className="mb-3 text-sm text-gray-600">
-              {data.total} resultado{data.total === 1 ? "" : "s"} para{" "}
-              <span className="font-semibold text-gray-800">"{data.query}"</span>
+              {data.total} resultado{data.total === 1 ? "" : "s"}
+              {data.query ? (
+                <>
+                  {" "}para <span className="font-semibold text-gray-800">"{data.query}"</span>
+                </>
+              ) : null}
+              {serviceId ? (
+                <>
+                  {" "}en categoría{" "}
+                  <span className="font-semibold text-gray-800">
+                    {services.find((s) => s.id === serviceId)?.name ?? "—"}
+                  </span>
+                </>
+              ) : null}
             </p>
 
             {data.results.length === 0 ? (

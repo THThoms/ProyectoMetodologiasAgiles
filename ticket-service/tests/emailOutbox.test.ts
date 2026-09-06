@@ -180,7 +180,7 @@ describe("HU-15 - notificaciones por acción", () => {
       .send({
         reason: "Requiere otra área",
         workDone: "Se revisó conectividad",
-        targetArea: "TICS",
+        targetArea: "DTIC",
       });
     expect(res.status).toBe(200);
     expect(mockOutboxCreate).toHaveBeenCalledTimes(1);

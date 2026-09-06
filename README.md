@@ -41,7 +41,7 @@ Diseñado como **monorepo de microservicios** con autenticación local + SSO Mic
 ServiceDesk UTA cubre tres perfiles:
 
 - **Usuario solicitante** (docente, estudiante o administrativo) — crea tickets, adjunta imágenes, sigue el estado del suyo, recibe notificaciones por correo, imprime el historial oficial.
-- **Técnico** — ve la bandeja de tickets disponibles de su área (Técnicos / TICs / General), acepta, aporta, deriva, resuelve con solución de la base de conocimiento (existente o nueva).
+- **Técnico** — ve la bandeja de tickets disponibles de su área (Técnicos / DTIC), acepta, aporta, deriva, resuelve con solución de la base de conocimiento (existente o nueva).
 - **Administrador** — asigna tickets manualmente, ve estadísticas en vivo con filtro por rango de fechas, historial general filtrable, genera reportes individuales por técnico con impresión y exportación a PDF.
 
 Además implementa: seguridad de contraseñas con política institucional y hash bcrypt (con migración transparente de hashes SHA-256 legacy), notificaciones por correo con patrón *outbox* tolerante a fallos, y encabezados de reporte alineables a los períodos académicos oficiales de la UTA.
@@ -179,9 +179,9 @@ Los microservicios internos (`auth :3001`, `catalog :3002`, `ticket :3003`, `pos
 | Administrador | `msolis5357@uta.edu.ec` | `msolis123` |
 | Técnico (Técnicos) | `carlos.mena@uta.edu.ec` | `tecn1123` |
 | Técnico (Técnicos) | `daniela.paredes@uta.edu.ec` | `tecn2123` |
-| Técnico (TICs) | `andres.salazar@uta.edu.ec` | `tecn3123` |
-| Técnico (TICs) | `valeria.nunez@uta.edu.ec` | `tecn4123` |
-| Técnico (TICs) | `mateo.cordova@uta.edu.ec` | `tecn5123` |
+| Técnico (DTIC) | `andres.salazar@uta.edu.ec` | `tecn3123` |
+| Técnico (DTIC) | `valeria.nunez@uta.edu.ec` | `tecn4123` |
+| Técnico (DTIC) | `mateo.cordova@uta.edu.ec` | `tecn5123` |
 | Usuario | `docente@uta.edu.ec` | `docente123` |
 | Usuario | `estudiante@uta.edu.ec` | `estudiante123` |
 

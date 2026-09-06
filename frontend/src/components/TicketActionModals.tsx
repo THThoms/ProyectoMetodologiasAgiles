@@ -204,8 +204,7 @@ export function EscalateV2Modal({ ticket, onClose, onSuccess }: ModalProps) {
                 disabled={submitting}
               >
                 <option value="TECHNICIANS">{getResponsibleAreaLabel("TECHNICIANS")}</option>
-                <option value="TICS">{getResponsibleAreaLabel("TICS")}</option>
-                <option value="GENERAL">{getResponsibleAreaLabel("GENERAL")}</option>
+                <option value="DTIC">{getResponsibleAreaLabel("DTIC")}</option>
               </select>
             </div>
             <div>

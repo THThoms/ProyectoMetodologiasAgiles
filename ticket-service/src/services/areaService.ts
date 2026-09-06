@@ -9,11 +9,11 @@ export type StaffRole = "admin" | "tech_n1" | "tech_n2" | "tech_n3" | "tech_n4";
 
 const TECH_AREAS: Record<string, ResponsibleArea[]> = {
   // Técnicos básicos/profesionales: incidencias técnicas físicas y de red.
-  tech_n1: [ResponsibleArea.TECHNICIANS, ResponsibleArea.GENERAL],
-  tech_n2: [ResponsibleArea.TECHNICIANS, ResponsibleArea.GENERAL],
-  // DITIC/especializado: plataformas y sistemas institucionales.
-  tech_n3: [ResponsibleArea.TICS, ResponsibleArea.GENERAL],
-  tech_n4: [ResponsibleArea.TICS, ResponsibleArea.GENERAL],
+  tech_n1: [ResponsibleArea.TECHNICIANS],
+  tech_n2: [ResponsibleArea.TECHNICIANS],
+  // DTIC/especializado: plataformas y sistemas institucionales.
+  tech_n3: [ResponsibleArea.DTIC],
+  tech_n4: [ResponsibleArea.DTIC],
 };
 
 /**
@@ -22,7 +22,7 @@ const TECH_AREAS: Record<string, ResponsibleArea[]> = {
  */
 export function areasForRole(role: string): ResponsibleArea[] {
   if (role === "admin") {
-    return [ResponsibleArea.TECHNICIANS, ResponsibleArea.TICS, ResponsibleArea.GENERAL];
+    return [ResponsibleArea.TECHNICIANS, ResponsibleArea.DTIC];
   }
   return TECH_AREAS[role] ?? [];
 }

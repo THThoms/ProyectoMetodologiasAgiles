@@ -3,7 +3,7 @@
 // Reglas:
 //   - HTML simple, sin CSS externo (compatibilidad con clientes de correo).
 //   - Nunca incluye roles internos (tech_n*), niveles N1-N4 ni IDs sensibles.
-//   - Nombres de área se imprimen en formato público ("Técnicos", "TICs", "General").
+//   - Nombres de área se imprimen en formato público ("Técnicos", "DTIC").
 //   - Si el técnico tiene nombre con "Nivel", se reduce a "Técnico" para mantener
 //     la línea editorial del Sprint 2 (rev).
 //   - No incluye tokens, contraseñas ni el `userEmail` del solicitante.
@@ -51,8 +51,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const AREA_LABEL: Record<string, string> = {
   TECHNICIANS: "Técnicos",
-  TICS: "TICs",
-  GENERAL: "General",
+  DTIC: "DTIC",
 };
 
 function publicStatus(s?: string | null): string {
@@ -100,7 +99,7 @@ function wrapHtml(title: string, bodyHtml: string): string {
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center"
          style="background:#ffffff; border-collapse:collapse; max-width:560px; width:100%; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;">
     <tr>
-      <td style="background:#9c1f2c; color:#fff; padding:14px 20px; font-weight:bold; font-size:16px;">
+      <td style="background:#1e3a8a; color:#fff; padding:14px 20px; font-weight:bold; font-size:16px;">
         Universidad Técnica de Ambato — ServiceDesk
       </td>
     </tr>
@@ -110,7 +109,7 @@ function wrapHtml(title: string, bodyHtml: string): string {
         ${bodyHtml}
         <p style="margin:18px 0 0; font-size:12px; color:#666;">
           Puedes revisar el seguimiento ingresando a ServiceDesk:
-          <a href="${esc(env.frontendUrl)}" style="color:#9c1f2c;">${esc(env.frontendUrl)}</a>
+          <a href="${esc(env.frontendUrl)}" style="color:#1e3a8a;">${esc(env.frontendUrl)}</a>
         </p>
       </td>
     </tr>
