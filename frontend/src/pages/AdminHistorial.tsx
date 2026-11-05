@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
-import { api, extractApiError } from "../lib/api";
+import { api, extractApiError, isCancelled } from "../lib/api";
 import TicketHistoryModal from "../components/TicketHistoryModal";
 import {
   getResponsibleAreaLabel,
@@ -107,20 +107,27 @@ export default function AdminHistorial() {
   const [services, setServices] = useState<CatalogService[]>([]);
   const [historyTicket, setHistoryTicket] = useState<HistoryTicket | null>(null);
 
-  // Carga catálogos para los selects (técnicos + servicios).
+  // Carga catálogos para los selects (técnicos + servicios). Sprint E:
+  // AbortController para no dejar fetches zombies al cambiar de vista rápido.
   useEffect(() => {
+    const ctrl = new AbortController();
     api
-      .get<{ technicians: Technician[] }>("/api/admin/technicians")
+      .get<{ technicians: Technician[] }>("/api/admin/technicians", { signal: ctrl.signal })
       .then((r) => setTechnicians(r.data.technicians))
-      .catch(() => {
-        /* opcional, no bloquea */
+      .catch((err) => {
+        if (!isCancelled(err)) {
+          /* opcional, no bloquea */
+        }
       });
     api
-      .get<{ services: CatalogService[] }>("/api/catalog/services?includeInactive=true")
+      .get<{ services: CatalogService[] }>("/api/catalog/services?includeInactive=true", { signal: ctrl.signal })
       .then((r) => setServices(r.data.services))
-      .catch(() => {
-        /* opcional, no bloquea */
+      .catch((err) => {
+        if (!isCancelled(err)) {
+          /* opcional, no bloquea */
+        }
       });
+    return () => ctrl.abort();
   }, []);
 
   const query = useMemo(() => {
@@ -141,21 +148,24 @@ export default function AdminHistorial() {
     return params.toString();
   }, [filters, page, limit]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const r = await api.get<HistoryResponse>(`/api/admin/tickets/history?${query}`);
+      const r = await api.get<HistoryResponse>(`/api/admin/tickets/history?${query}`, { signal });
       setData(r.data);
     } catch (err) {
+      if (isCancelled(err)) return;
       setError(extractApiError(err));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [query]);
 
   useEffect(() => {
-    load();
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+    return () => ctrl.abort();
   }, [load]);
 
   function updateFilter<K extends keyof typeof filters>(key: K, value: string) {

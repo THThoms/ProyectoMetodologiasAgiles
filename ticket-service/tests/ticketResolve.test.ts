@@ -104,7 +104,9 @@ function mockTicket(
   mockTicketUpdate.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
     id: TICKET_ID,
     number: "TK-RESOLVE",
-    status: "resuelto",
+    // Sprint I · P4 — el técnico deja el ticket en pendiente_validacion, no
+    // en resuelto. Solo tras user-accept pasa a resuelto.
+    status: "pendiente_validacion",
     ...data,
   }));
   mockEventCreate.mockResolvedValue({ id: "ev-resolved" });
@@ -156,7 +158,7 @@ describe("POST /tickets/:id/resolve - existingKnowledge", () => {
       expect.objectContaining({
         where: { id: TICKET_ID },
         data: expect.objectContaining({
-          status: "resuelto",
+          status: "pendiente_validacion",
           resolvedById: TECH_ID,
           resolvedByName: "Téc N1",
           knowledgeArticleId: KB_ID,
@@ -172,7 +174,9 @@ describe("POST /tickets/:id/resolve - existingKnowledge", () => {
         data: expect.objectContaining({
           action: "RESOLVED",
           previousStatus: "en_proceso",
-          newStatus: "resuelto",
+          // Sprint I · P4 — RESOLVED marca pendiente_validacion; el estado
+          // final resuelto llega tras USER_ACCEPTED.
+          newStatus: "pendiente_validacion",
           performedBy: TECH_ID,
           visibility: "public",
         }),
@@ -251,7 +255,7 @@ describe("POST /tickets/:id/resolve - newKnowledge", () => {
     expect(mockTicketUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          status: "resuelto",
+          status: "pendiente_validacion",
           knowledgeArticleId: KB_ID,
         }),
       })

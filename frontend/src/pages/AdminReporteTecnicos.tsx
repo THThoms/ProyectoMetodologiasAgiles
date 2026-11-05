@@ -1,17 +1,18 @@
-// HU-16 - Reporte individual de técnico (solo admin).
+// HU-16 / Fase T - Pantalla Reportes (solo admin), con un único formulario:
+//   - con bloque elegido → reporte del bloque (general o de uno de sus técnicos);
+//   - sin bloque y con técnico → reporte individual del técnico.
 //
 // Reutiliza:
 //   - Layout + card + Tailwind (misma línea visual)
 //   - DonutChart / BarChart / LineChart (SVG custom, sin dependencias)
 //   - getTechnicianDisplayLabel / getResponsibleAreaLabel del helper compartido
-//   - Estrategia de "Imprimir / Guardar PDF" con window.open + window.print()
-//     (misma que HU-14 Historial). El botón "Guardar PDF" es idéntico a Imprimir:
-//     el navegador ofrece "Guardar como PDF" en su diálogo estándar.
-//     Justificación: NO se instala nueva dependencia (jspdf/puppeteer). Coherente
-//     con la arquitectura actual y funciona en todos los navegadores modernos.
+//   - Documento imprimible compartido (lib/institutionalReport): el navegador ofrece
+//     "Guardar como PDF" en su diálogo de impresión, sin dependencias nuevas.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Layout } from "../components/Layout";
+import BlockReportView from "../components/reports/BlockReportView";
 import { api, extractApiError } from "../lib/api";
 import DonutChart, { DonutSlice } from "../components/charts/DonutChart";
 import BarChart from "../components/charts/BarChart";
@@ -21,142 +22,40 @@ import {
   getTechnicianDisplayLabel,
 } from "../lib/technician";
 import { getCurrentUser } from "../lib/auth";
+import { EmptyRow, Kpi, Section, SolutionCell, Td, Th, ValidationCell } from "../components/reports/ReportUi";
+import {
+  STATUS_LABELS,
+  PRIORITY_LABELS,
+  actionLabel,
+  fmtCalendarDay,
+  blockReportHtml,
+  fmtDate,
+  fmtDateTime,
+  printDocument,
+  printableReason,
+  priorityLabel,
+  statusLabel,
+  technicianReportHtml,
+  type BlockReportData,
+  type ReportTechnician,
+  type TechnicianReportData,
+} from "../lib/institutionalReport";
 
 // -----------------------------------------------------------------------------
-// Tipos que espeja el backend (technicianReportService).
+// Tipos: espejan el backend y se comparten con el documento imprimible.
 // -----------------------------------------------------------------------------
-interface Technician {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  areas: ("TECHNICIANS" | "DTIC")[];
-  isActive: boolean;
-}
-
-interface ReportSummary {
-  ticketsAssigned: number;
-  ticketsAccepted: number;
-  ticketsInProgress: number;
-  ticketsEscalated: number;
-  ticketsResolved: number;
-  ticketsClosed: number;
-  contributions: number;
-  reescalations: number;
-  distinctServices: number;
-}
-
-interface ReportTicket {
-  id: string;
-  number: string;
-  createdAt: string;
-  title: string;
-  detail: string | null;
-  serviceName: string | null;
-  responsibleArea: "TECHNICIANS" | "DTIC";
-  priority: "baja" | "media" | "alta" | "critica";
-  status: "abierto" | "en_proceso" | "escalado" | "resuelto" | "cerrado";
-  requesterName: string | null;
-  requesterEmail: string | null;
-  assignedTechnicianName: string | null;
-  acceptedAt: string | null;
-  resolvedAt: string | null;
-  resolvedByName: string | null;
-  resolutionSummary: string | null;
-  knowledgeArticleId: string | null;
-}
-
-interface ReportActivity {
-  id: string;
-  ticketId: string;
-  ticketNumber: string | null;
-  createdAt: string;
-  actionType: string;
-  performedByName: string;
-  description: string | null;
-  reason: string | null;
-  workDone: string | null;
-  previousArea: string | null;
-  newArea: string | null;
-  previousStatus: string | null;
-  newStatus: string | null;
-  visibility: string;
-}
-
-interface ReportEscalation {
-  ticketNumber: string | null;
-  createdAt: string;
-  previousArea: string | null;
-  newArea: string | null;
-  reason: string | null;
-  workDone: string | null;
-  performedByName: string;
-}
-
-interface ReportResolution {
-  ticketNumber: string;
-  serviceName: string | null;
-  problemDescription: string | null;
-  resolvedAt: string | null;
-  resolutionSummary: string | null;
-  knowledgeArticleId: string | null;
-  resolvedByName: string | null;
-}
-
-interface ReportContribution {
-  ticketNumber: string | null;
-  createdAt: string;
-  performedByName: string;
-  description: string | null;
-}
-
-interface CountByLabel {
-  label: string;
-  count: number;
-}
-
-interface MonthlySeriesPoint {
-  month: string;
-  count: number;
-}
-
-interface TechnicianReport {
-  technician: Technician;
-  range: { from: string | null; to: string | null };
-  generatedAt: string;
-  summary: ReportSummary;
-  tickets: ReportTicket[];
-  activity: ReportActivity[];
-  escalations: ReportEscalation[];
-  resolutions: ReportResolution[];
-  contributions: ReportContribution[];
-  byService: CountByLabel[];
-  byStatus: CountByLabel[];
-  byPriority: CountByLabel[];
-  byMonth: MonthlySeriesPoint[];
-}
+type Technician = ReportTechnician;
+type TechnicianReport = TechnicianReportData;
 
 // -----------------------------------------------------------------------------
 // Etiquetas y colores (mismos que AdminStats para consistencia visual)
 // -----------------------------------------------------------------------------
-const STATUS_LABEL: Record<string, string> = {
-  abierto: "Pendiente",
-  en_proceso: "En Proceso",
-  escalado: "Escalado",
-  resuelto: "Resuelto",
-  cerrado: "Cerrado",
-};
-const PRIORITY_LABEL: Record<string, string> = {
-  baja: "Baja",
-  media: "Media",
-  alta: "Alta",
-  critica: "Crítica",
-};
 const STATUS_COLORS: Record<string, string> = {
   abierto: "#3b82f6",
   en_proceso: "#f59e0b",
   escalado: "#8b5cf6",
   resuelto: "#10b981",
+  pendiente_validacion: "#0ea5e9",
   cerrado: "#64748b",
 };
 const PRIORITY_COLORS: Record<string, string> = {
@@ -165,29 +64,6 @@ const PRIORITY_COLORS: Record<string, string> = {
   alta: "#f97316",
   critica: "#dc2626",
 };
-
-function formatDay(iso: string | null): string {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("T")[0].split("-");
-  return `${d}/${m}/${y}`;
-}
-// Fecha + hora en formato DD/MM/AAAA HH:MM (para "Fecha de generación").
-function formatDateTime(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return "—";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-function esc(v: string | null | undefined): string {
-  if (v == null) return "";
-  return String(v)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 // -----------------------------------------------------------------------------
 // Accesos rápidos de rango
@@ -252,6 +128,11 @@ export default function AdminReporteTecnicos() {
   const admin = getCurrentUser();
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
+  const [blockFilter, setBlockFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [serviceFilter, setServiceFilter] = useState("");
+  const [services, setServices] = useState<Array<{ id: string; name: string }>>([]);
+  const [blockReport, setBlockReport] = useState<BlockReportData | null>(null);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   // Nombre del período que verá el reporte y el PDF. Se actualiza al aplicar
@@ -281,16 +162,34 @@ export default function AdminReporteTecnicos() {
       .finally(() => {
         if (!cancelled) setLoadingTechs(false);
       });
+    api
+      .get<{ services: Array<{ id: string; name: string }> }>("/api/catalog/services")
+      .then((r) => {
+        if (!cancelled) setServices(r.data.services ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setServices([]);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
   const rangeInvalid = Boolean(dateFrom && dateTo && dateFrom > dateTo);
+  // Con bloque elegido solo se ofrecen sus técnicos; DTIC nunca pertenece a un bloque.
+  const techOptions = useMemo(
+    () => (blockFilter ? technicians.filter((t) => t.role === "technician" && t.block === blockFilter) : technicians),
+    [technicians, blockFilter]
+  );
+  const blockCount = (b: string) => technicians.filter((t) => t.role === "technician" && t.block === b).length;
+  const clearReports = useCallback(() => {
+    setReport(null);
+    setBlockReport(null);
+  }, []);
 
   const generate = useCallback(async () => {
-    if (!selectedId) {
-      setError("Selecciona un técnico primero.");
+    if (!blockFilter && !selectedId) {
+      setError("Elige un bloque o un técnico.");
       return;
     }
     if (rangeInvalid) {
@@ -300,23 +199,32 @@ export default function AdminReporteTecnicos() {
     setDateError(null);
     setError(null);
     setLoadingReport(true);
+    clearReports();
     try {
       const params = new URLSearchParams();
       if (dateFrom) params.set("from", dateFrom);
       if (dateTo) params.set("to", dateTo);
-      const qs = params.toString();
-      const url = `/api/admin/reports/technicians/${selectedId}${qs ? `?${qs}` : ""}`;
-      const r = await api.get<TechnicianReport>(url);
-      setReport(r.data);
+      if (blockFilter) {
+        // El filtrado por bloque, técnico, estado y servicio ocurre en el backend.
+        params.set("block", blockFilter);
+        if (selectedId) params.set("technicianId", selectedId);
+        if (statusFilter) params.set("status", statusFilter);
+        if (serviceFilter) params.set("serviceId", serviceFilter);
+        const r = await api.get<BlockReportData>(`/api/admin/reports/block?${params.toString()}`);
+        setBlockReport(r.data);
+      } else {
+        const qs = params.toString();
+        const r = await api.get<TechnicianReport>(`/api/admin/reports/technicians/${selectedId}${qs ? `?${qs}` : ""}`);
+        setReport(r.data);
+      }
       // Congela el nombre del período mostrado en el reporte generado.
       setPeriodLabelSnapshot(periodLabel);
     } catch (err) {
       setError(extractApiError(err));
-      setReport(null);
     } finally {
       setLoadingReport(false);
     }
-  }, [selectedId, dateFrom, dateTo, rangeInvalid, periodLabel]);
+  }, [blockFilter, selectedId, statusFilter, serviceFilter, dateFrom, dateTo, rangeInvalid, periodLabel, clearReports]);
 
   function applyQuickRange(from: string, to: string, label: string) {
     setDateFrom(from);
@@ -351,7 +259,7 @@ export default function AdminReporteTecnicos() {
   const statusDonut: DonutSlice[] = useMemo(() => {
     if (!report) return [];
     return report.byStatus.map((r) => ({
-      label: STATUS_LABEL[r.label] ?? r.label,
+      label: STATUS_LABELS[r.label] ?? r.label,
       value: r.count,
       color: STATUS_COLORS[r.label] ?? "#94a3b8",
     }));
@@ -359,7 +267,7 @@ export default function AdminReporteTecnicos() {
   const priorityDonut: DonutSlice[] = useMemo(() => {
     if (!report) return [];
     return report.byPriority.map((r) => ({
-      label: PRIORITY_LABEL[r.label] ?? r.label,
+      label: PRIORITY_LABELS[r.label] ?? r.label,
       value: r.count,
       color: PRIORITY_COLORS[r.label] ?? "#94a3b8",
     }));
@@ -375,330 +283,84 @@ export default function AdminReporteTecnicos() {
     return report.byMonth.map((p) => ({ date: p.month, value: p.count }));
   }, [report]);
 
-  const selectedTech = technicians.find((t) => t.id === selectedId) ?? null;
+  const reportTech = report?.technician ?? null;
+  const areaLabel = reportTech
+    ? (reportTech.areas.map(getResponsibleAreaLabel).join(" / ") || getResponsibleAreaLabel(reportTech.areas[0] ?? "TECHNICIANS"))
+    : "—";
 
-  // -----------------------------------------------------------------
-  // Impresión / PDF: window.open con HTML autocontenido (misma técnica
-  // que HU-14). El botón "Guardar PDF" es idéntico a "Imprimir": el
-  // navegador ofrece "Guardar como PDF" en el diálogo de impresión.
-  // -----------------------------------------------------------------
-  function buildPrintHtml(): string {
-    if (!report) return "";
-    const r = report;
-    const generatedAtStr = formatDateTime(r.generatedAt);
-    const areaLabel =
-      r.technician.areas.map(getResponsibleAreaLabel).join(" / ") ||
-      getResponsibleAreaLabel(r.technician.areas[0] ?? "TECHNICIANS");
-
-    const summaryRows: Array<[string, string]> = [
-      ["Tickets asignados", String(r.summary.ticketsAssigned)],
-      ["Tickets aceptados", String(r.summary.ticketsAccepted)],
-      ["Tickets en proceso", String(r.summary.ticketsInProgress)],
-      ["Tickets resueltos", String(r.summary.ticketsResolved)],
-      ["Tickets cerrados", String(r.summary.ticketsClosed)],
-      ["Reescalamientos", String(r.summary.reescalations)],
-      ["Aportaciones", String(r.summary.contributions)],
-      ["Servicios distintos atendidos", String(r.summary.distinctServices)],
-    ];
-    const summaryHtml =
-      `<table class="meta">` +
-      summaryRows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join("") +
-      `</table>`;
-
-    const ticketsHtml = r.tickets.length
-      ? `<table class="tbl"><thead><tr>
-           <th>Número</th><th>Fecha</th><th>Servicio</th><th>Área</th>
-           <th>Prioridad</th><th>Estado</th><th>Solicitante</th><th>Resuelto</th>
-         </tr></thead><tbody>` +
-        r.tickets
-          .map(
-            (t) => `<tr>
-              <td>${esc(t.number)}</td>
-              <td>${esc(formatDay(t.createdAt))}</td>
-              <td>${esc(t.serviceName ?? "—")}</td>
-              <td>${esc(getResponsibleAreaLabel(t.responsibleArea))}</td>
-              <td>${esc(PRIORITY_LABEL[t.priority] ?? t.priority)}</td>
-              <td>${esc(STATUS_LABEL[t.status] ?? t.status)}</td>
-              <td>${esc(t.requesterName ?? "—")}</td>
-              <td>${esc(t.resolvedAt ? formatDay(t.resolvedAt) : "—")}</td>
-            </tr>`
-          )
-          .join("") +
-        `</tbody></table>`
-      : `<p class="empty">Sin tickets en el período.</p>`;
-
-    const activityHtml = r.activity.length
-      ? `<table class="tbl"><thead><tr>
-          <th>Fecha</th><th>Ticket</th><th>Acción</th><th>Descripción</th>
-         </tr></thead><tbody>` +
-        r.activity
-          .map(
-            (a) => `<tr>
-              <td>${esc(formatDay(a.createdAt))}</td>
-              <td>${esc(a.ticketNumber ?? "—")}</td>
-              <td>${esc(a.actionType)}</td>
-              <td>${esc(a.description ?? a.reason ?? a.workDone ?? "—")}</td>
-            </tr>`
-          )
-          .join("") +
-        `</tbody></table>`
-      : `<p class="empty">Sin actividad en el período.</p>`;
-
-    const escHtml = r.escalations.length
-      ? `<table class="tbl"><thead><tr>
-          <th>Ticket</th><th>Fecha</th><th>Área anterior</th><th>Área nueva</th>
-          <th>Motivo</th><th>Trabajo previo</th>
-         </tr></thead><tbody>` +
-        r.escalations
-          .map(
-            (e) => `<tr>
-              <td>${esc(e.ticketNumber ?? "—")}</td>
-              <td>${esc(formatDay(e.createdAt))}</td>
-              <td>${esc(e.previousArea ? getResponsibleAreaLabel(e.previousArea) : "—")}</td>
-              <td>${esc(e.newArea ? getResponsibleAreaLabel(e.newArea) : "—")}</td>
-              <td>${esc(e.reason ?? "—")}</td>
-              <td>${esc(e.workDone ?? "—")}</td>
-            </tr>`
-          )
-          .join("") +
-        `</tbody></table>`
-      : `<p class="empty">Sin reescalamientos en el período.</p>`;
-
-    const resHtml = r.resolutions.length
-      ? `<table class="tbl"><thead><tr>
-          <th>Ticket</th><th>Servicio</th><th>Problema</th><th>Resuelto el</th><th>Resumen</th>
-         </tr></thead><tbody>` +
-        r.resolutions
-          .map(
-            (x) => `<tr>
-              <td>${esc(x.ticketNumber)}</td>
-              <td>${esc(x.serviceName ?? "—")}</td>
-              <td>${esc(x.problemDescription ?? "—")}</td>
-              <td>${esc(x.resolvedAt ? formatDay(x.resolvedAt) : "—")}</td>
-              <td>${esc(x.resolutionSummary ?? "—")}</td>
-            </tr>`
-          )
-          .join("") +
-        `</tbody></table>`
-      : `<p class="empty">Sin resoluciones en el período.</p>`;
-
-    const contribHtml = r.contributions.length
-      ? `<table class="tbl"><thead><tr>
-          <th>Ticket</th><th>Fecha</th><th>Descripción</th>
-         </tr></thead><tbody>` +
-        r.contributions
-          .map(
-            (c) => `<tr>
-              <td>${esc(c.ticketNumber ?? "—")}</td>
-              <td>${esc(formatDay(c.createdAt))}</td>
-              <td>${esc(c.description ?? "—")}</td>
-            </tr>`
-          )
-          .join("") +
-        `</tbody></table>`
-      : `<p class="empty">Sin aportaciones en el período.</p>`;
-
-    const svcStats = r.byService.length
-      ? `<table class="tbl"><thead><tr><th>Servicio</th><th>Tickets</th></tr></thead><tbody>` +
-        r.byService
-          .map((b) => `<tr><td>${esc(b.label)}</td><td>${esc(String(b.count))}</td></tr>`)
-          .join("") +
-        `</tbody></table>`
-      : `<p class="empty">Sin datos.</p>`;
-    const statusStats = r.byStatus.length
-      ? `<table class="tbl"><thead><tr><th>Estado</th><th>Tickets</th></tr></thead><tbody>` +
-        r.byStatus
-          .map(
-            (b) =>
-              `<tr><td>${esc(STATUS_LABEL[b.label] ?? b.label)}</td><td>${esc(String(b.count))}</td></tr>`
-          )
-          .join("") +
-        `</tbody></table>`
-      : `<p class="empty">Sin datos.</p>`;
-    const priorityStats = r.byPriority.length
-      ? `<table class="tbl"><thead><tr><th>Prioridad</th><th>Tickets</th></tr></thead><tbody>` +
-        r.byPriority
-          .map(
-            (b) =>
-              `<tr><td>${esc(PRIORITY_LABEL[b.label] ?? b.label)}</td><td>${esc(String(b.count))}</td></tr>`
-          )
-          .join("") +
-        `</tbody></table>`
-      : `<p class="empty">Sin datos.</p>`;
-
-    return `<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="utf-8" />
-<title>Reporte técnico ${esc(r.technician.name)}</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; color:#000; background:#fff; margin:24px; font-size:12px; }
-  h1 { font-size:16px; margin:0; }
-  h2 { font-size:14px; margin:18px 0 8px; border-bottom:1px solid #ccc; padding-bottom:4px; }
-  /* --- Encabezado en 4 bloques --- */
-  header.doc { border:1px solid #1e3a8a; border-radius:4px; overflow:hidden; margin-bottom:18px; page-break-inside:avoid; }
-  header .inst-block { background:#eff6ff; border-bottom:2px solid #1e3a8a; padding:12px 16px; text-align:center; }
-  header .inst-block .inst { font-size:11px; font-weight:bold; letter-spacing:2px; color:#1e3a8a; text-transform:uppercase; }
-  header .inst-block .sys { font-size:11px; color:#555; margin-top:2px; }
-  header .inst-block h1 { font-size:15px; margin-top:8px; text-transform:uppercase; letter-spacing:1px; color:#1e3a8a; }
-  header .section { padding:10px 16px; border-bottom:1px solid #e5e7eb; }
-  header .section:last-child { border-bottom:none; }
-  header .section .sec-title { font-size:10px; font-weight:bold; letter-spacing:2px; color:#666; text-transform:uppercase; margin:0 0 6px; }
-  header .row { display:flex; flex-wrap:wrap; gap:20px; }
-  header .field { flex:1 1 200px; }
-  header .field .label { font-size:10px; color:#666; margin:0; }
-  header .field .value { font-size:12px; color:#111; font-weight:600; margin:1px 0 0; }
-  header .field .value.big { font-size:16px; font-weight:bold; color:#1e3a8a; }
-  /* --- Tablas --- */
-  table.meta { width:100%; border-collapse:collapse; margin:12px 0 16px; }
-  table.meta th, table.meta td { text-align:left; padding:4px 8px; border:1px solid #ddd; vertical-align:top; }
-  table.meta th { width:280px; background:#f5f5f5; font-weight:600; }
-  table.tbl { width:100%; border-collapse:collapse; font-size:11px; page-break-inside:auto; }
-  table.tbl th, table.tbl td { border:1px solid #ddd; padding:4px 6px; text-align:left; vertical-align:top; }
-  table.tbl thead { background:#f5f5f5; }
-  table.tbl tr { page-break-inside:avoid; }
-  .empty { padding:8px; text-align:center; color:#555; font-style:italic; }
-  footer.doc { margin-top:24px; border-top:1px solid #ccc; padding-top:8px; font-size:10px; color:#666; text-align:center; }
-  @media print { body { margin:0; } @page { margin:16mm; size:A4; } }
-</style>
-</head>
-<body>
-  <header class="doc">
-    <!-- Bloque 1: Institucional -->
-    <div class="inst-block">
-      <div class="inst">Universidad Técnica de Ambato</div>
-      <div class="sys">Sistema ServiceDesk UTA</div>
-      <h1>Reporte individual de actividades del técnico</h1>
-    </div>
-
-    <!-- Bloque 2: Técnico -->
-    <div class="section">
-      <p class="sec-title">Información del técnico</p>
-      <div class="row">
-        <div class="field">
-          <p class="label">Técnico:</p>
-          <p class="value big">${esc(r.technician.name)}</p>
-        </div>
-        <div class="field">
-          <p class="label">Área:</p>
-          <p class="value">${esc(areaLabel)}</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bloque 3: Período -->
-    <div class="section">
-      <p class="sec-title">Período del reporte</p>
-      <div class="row">
-        <div class="field">
-          <p class="label">Período:</p>
-          <p class="value">${esc(periodLabelSnapshot)}</p>
-        </div>
-        <div class="field">
-          <p class="label">Desde:</p>
-          <p class="value">${esc(r.range.from ? formatDay(r.range.from) : "—")}</p>
-        </div>
-        <div class="field">
-          <p class="label">Hasta:</p>
-          <p class="value">${esc(r.range.to ? formatDay(r.range.to) : "—")}</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bloque 4: Generación -->
-    <div class="section">
-      <p class="sec-title">Información de generación</p>
-      <div class="row">
-        <div class="field">
-          <p class="label">Generado por:</p>
-          <p class="value">${esc(admin?.name ?? admin?.email ?? "Admin")}</p>
-        </div>
-        <div class="field">
-          <p class="label">Fecha de generación:</p>
-          <p class="value">${esc(generatedAtStr)}</p>
-        </div>
-      </div>
-    </div>
-  </header>
-
-  <h2>Resumen general</h2>
-  ${summaryHtml}
-
-  <h2>Estadísticas por servicio</h2>
-  ${svcStats}
-  <h2>Estadísticas por estado</h2>
-  ${statusStats}
-  <h2>Estadísticas por prioridad</h2>
-  ${priorityStats}
-
-  <h2>Historial completo de tickets</h2>
-  ${ticketsHtml}
-
-  <h2>Actividad del técnico</h2>
-  ${activityHtml}
-
-  <h2>Reescalamientos</h2>
-  ${escHtml}
-
-  <h2>Resoluciones</h2>
-  ${resHtml}
-
-  <h2>Aportaciones</h2>
-  ${contribHtml}
-
-  <footer class="doc">
-    Documento generado desde ServiceDesk UTA. Datos consultados en tiempo real desde ticket_db.
-  </footer>
-</body>
-</html>`;
-  }
-
+  // Imprimir y guardar como PDF usan el mismo diálogo del navegador.
   function openPrint() {
-    if (!report) return;
-    const win = window.open("", "_blank", "width=1000,height=800");
-    if (!win) {
-      setError("No se pudo abrir la ventana de impresión. Revisa el bloqueador de ventanas emergentes.");
+    let html: string;
+    if (blockReport) {
+      const notes = [
+        blockReport.filters.status ? `Estado: ${statusLabel(blockReport.filters.status)}` : null,
+        blockReport.filters.serviceId ? `Servicio: ${services.find((s) => s.id === blockReport.filters.serviceId)?.name ?? "seleccionado"}` : null,
+      ].filter(Boolean);
+      html = blockReportHtml(blockReport, {
+        origin: window.location.origin,
+        generatedBy: admin?.name ?? admin?.email,
+        filterNote: notes.join(" · ") || null,
+      });
+    } else if (report) {
+      html = technicianReportHtml(report, {
+        origin: window.location.origin,
+        generatedBy: admin?.name ?? admin?.email,
+        periodName: periodLabelSnapshot,
+        areaLabel,
+        areaOf: getResponsibleAreaLabel,
+      });
+    } else {
       return;
     }
-    win.document.open();
-    win.document.write(buildPrintHtml());
-    win.document.close();
-    win.focus();
-    win.onload = () => {
-      win.print();
-    };
-    setTimeout(() => {
-      try {
-        win.print();
-      } catch {
-        /* ignore */
-      }
-    }, 400);
+    if (!printDocument(html)) {
+      setError("No se pudo preparar la impresión. Recarga la página e inténtalo de nuevo.");
+    }
   }
 
-  const areaLabel = selectedTech
-    ? (selectedTech.areas.map(getResponsibleAreaLabel).join(" / ") ||
-        getResponsibleAreaLabel(selectedTech.areas[0] ?? "TECHNICIANS"))
-    : "—";
+
+  const cannotPrint = !report && (!blockReport || blockReport.technicians.length === 0);
+  const selectedName = technicians.find((x) => x.id === selectedId)?.name;
+  const reportKindText = blockFilter
+    ? `${selectedName ? `reporte individual de ${selectedName} en` : "reporte general del"} ${blockFilter === "BLOQUE_1" ? "Bloque 1" : "Bloque 2"}`
+    : selectedName
+      ? `reporte individual de ${selectedName}`
+      : "elige un bloque o un técnico";
 
   return (
     <Layout>
       <div className="mx-auto max-w-7xl">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-uta-900">Reportes de Técnicos</h1>
+        <div className="mb-4">
+          <h1 className="text-2xl font-bold text-uta-900">Reportes</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Reporte individual por técnico con datos reales del sistema.
+            Elige un bloque para su reporte general o un técnico para su reporte individual.
           </p>
         </div>
 
-        {/* Formulario de generación */}
+        {/* Formulario único: con bloque → reporte del bloque; sin bloque → reporte del técnico */}
         <div className="card mb-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
             Generar reporte
           </h2>
           <div className="grid gap-3 md:grid-cols-4">
-            <div className="md:col-span-2">
+            <div>
+              <label className="label" htmlFor="block-select">Bloque</label>
+              <select
+                id="block-select"
+                className="input"
+                value={blockFilter}
+                onChange={(e) => {
+                  setBlockFilter(e.target.value);
+                  setSelectedId("");
+                  clearReports();
+                }}
+                disabled={loadingTechs || loadingReport}
+              >
+                <option value="">Sin bloque (por técnico)</option>
+                <option value="BLOQUE_1">Bloque 1 ({blockCount("BLOQUE_1")} {blockCount("BLOQUE_1") === 1 ? "técnico" : "técnicos"})</option>
+                <option value="BLOQUE_2">Bloque 2 ({blockCount("BLOQUE_2")} {blockCount("BLOQUE_2") === 1 ? "técnico" : "técnicos"})</option>
+              </select>
+            </div>
+            <div>
               <label className="label" htmlFor="tech-select">Seleccionar técnico</label>
               <select
                 id="tech-select"
@@ -706,14 +368,14 @@ export default function AdminReporteTecnicos() {
                 value={selectedId}
                 onChange={(e) => {
                   setSelectedId(e.target.value);
-                  setReport(null);
+                  clearReports();
                 }}
                 disabled={loadingTechs || loadingReport}
               >
                 <option value="">
-                  {loadingTechs ? "Cargando técnicos…" : "— Seleccionar —"}
+                  {loadingTechs ? "Cargando técnicos…" : blockFilter ? "Todo el bloque" : "— Seleccionar —"}
                 </option>
-                {technicians.map((t) => (
+                {techOptions.map((t) => (
                   <option key={t.id} value={t.id}>
                     {getTechnicianDisplayLabel(t, { includeEmail: false })}
                   </option>
@@ -752,6 +414,25 @@ export default function AdminReporteTecnicos() {
             </div>
           </div>
 
+          {blockFilter && (
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="label" htmlFor="status-select">Estado</label>
+                <select id="status-select" className="input" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} disabled={loadingReport}>
+                  <option value="">Todos</option>
+                  {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label" htmlFor="service-select">Servicio</label>
+                <select id="service-select" className="input" value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)} disabled={loadingReport}>
+                  <option value="">Todos</option>
+                  {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+
           {/* Períodos institucionales UTA (opcional; configurables en INSTITUTIONAL_PERIODS) */}
           <div className="mt-3">
             <label className="label" htmlFor="uta-period">Período institucional UTA</label>
@@ -771,19 +452,27 @@ export default function AdminReporteTecnicos() {
             </select>
           </div>
 
+          {blockFilter && !loadingTechs && techOptions.length === 0 && (
+            <p className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" data-testid="block-empty-hint">
+              Este bloque no tiene técnicos asignados. Asígnalos en{" "}
+              <Link to="/admin/bloques" className="font-semibold underline">Bloques</Link> para poder generar su reporte.
+            </p>
+          )}
+
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={generate}
-              disabled={!selectedId || rangeInvalid || loadingReport}
-              className="rounded bg-uta-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-uta-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+              disabled={(!blockFilter && !selectedId) || rangeInvalid || loadingReport}
+              data-testid="report-generate"
+              className="rounded bg-uta-700 px-4 py-1.5 text-sm font-semibold text-white hover:bg-uta-900 disabled:cursor-not-allowed disabled:bg-gray-300"
             >
               {loadingReport ? "Generando…" : "Generar reporte"}
             </button>
             <button
               type="button"
               onClick={openPrint}
-              disabled={!report}
+              disabled={cannotPrint}
               className="rounded border border-uta-700 bg-white px-4 py-1.5 text-sm font-semibold text-uta-700 hover:bg-uta-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               🖨 Imprimir
@@ -791,7 +480,7 @@ export default function AdminReporteTecnicos() {
             <button
               type="button"
               onClick={openPrint}
-              disabled={!report}
+              disabled={cannotPrint}
               className="rounded border border-gray-300 bg-white px-4 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               title='En el diálogo elige "Guardar como PDF" como destino'
             >
@@ -806,8 +495,8 @@ export default function AdminReporteTecnicos() {
           </div>
 
           {/* Muestra el período que se aplicará al generar. */}
-          <div className="mt-2 text-xs text-gray-500">
-            Período seleccionado: <strong className="text-uta-900">{periodLabel}</strong>
+          <div className="mt-2 text-xs text-gray-500" data-testid="report-kind">
+            Se generará: <strong className="text-uta-900">{reportKindText}</strong> · Período: <strong className="text-uta-900">{periodLabel}</strong>
           </div>
           {dateError && (
             <div className="mt-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
@@ -824,7 +513,7 @@ export default function AdminReporteTecnicos() {
 
         {loadingReport && (
           <div className="card py-12 text-center">
-            <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-uta-200 border-t-uta-600" />
+            <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-uta-100 border-t-uta-700" />
             <p className="text-sm text-gray-500">Generando reporte…</p>
           </div>
         )}
@@ -876,13 +565,13 @@ export default function AdminReporteTecnicos() {
                   <div>
                     <dt className="text-xs text-gray-500">Desde</dt>
                     <dd className="text-sm font-semibold text-gray-800">
-                      {report.range.from ? formatDay(report.range.from) : "—"}
+                      {report.range.from ? fmtCalendarDay(report.range.from) : "—"}
                     </dd>
                   </div>
                   <div>
                     <dt className="text-xs text-gray-500">Hasta</dt>
                     <dd className="text-sm font-semibold text-gray-800">
-                      {report.range.to ? formatDay(report.range.to) : "—"}
+                      {report.range.to ? fmtCalendarDay(report.range.to) : "—"}
                     </dd>
                   </div>
                 </dl>
@@ -903,7 +592,7 @@ export default function AdminReporteTecnicos() {
                   <div>
                     <dt className="text-xs text-gray-500">Fecha de generación</dt>
                     <dd className="text-sm font-semibold text-gray-800">
-                      {formatDateTime(report.generatedAt)}
+                      {fmtDateTime(report.generatedAt)}
                     </dd>
                   </div>
                 </dl>
@@ -916,7 +605,7 @@ export default function AdminReporteTecnicos() {
             </h2>
             <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
               <Kpi label="Asignados" value={report.summary.ticketsAssigned} accent="bg-uta-100 text-uta-900" />
-              <Kpi label="Aceptados" value={report.summary.ticketsAccepted} accent="bg-cyan-100 text-cyan-800" />
+              <Kpi label="Aceptaciones" value={report.summary.ticketsAccepted} accent="bg-cyan-100 text-cyan-800" />
               <Kpi label="En proceso" value={report.summary.ticketsInProgress} accent="bg-amber-100 text-amber-800" />
               <Kpi label="Resueltos" value={report.summary.ticketsResolved} accent="bg-emerald-100 text-emerald-800" />
               <Kpi label="Cerrados" value={report.summary.ticketsClosed} accent="bg-gray-200 text-gray-800" />
@@ -946,21 +635,32 @@ export default function AdminReporteTecnicos() {
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <Th>Número</Th><Th>Fecha</Th><Th>Servicio</Th><Th>Área</Th>
-                        <Th>Prioridad</Th><Th>Estado</Th><Th>Solicitante</Th><Th>Resuelto</Th>
+                        <Th>Número</Th><Th>Fecha</Th><Th>Servicio</Th><Th>Ubicación</Th><Th>Área</Th>
+                        <Th>Prioridad</Th><Th>Estado</Th><Th>Solicitante</Th><Th>Solución utilizada</Th><Th>Resuelto</Th><Th>Validación digital</Th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
                       {report.tickets.map((t) => (
                         <tr key={t.id} className="hover:bg-gray-50">
                           <Td mono>{t.number}</Td>
-                          <Td>{formatDay(t.createdAt)}</Td>
+                          <Td>{fmtDate(t.createdAt)}</Td>
                           <Td>{t.serviceName ?? "—"}</Td>
+                          <Td>{t.location ?? "—"}</Td>
                           <Td>{getResponsibleAreaLabel(t.responsibleArea)}</Td>
-                          <Td>{PRIORITY_LABEL[t.priority] ?? t.priority}</Td>
-                          <Td>{STATUS_LABEL[t.status] ?? t.status}</Td>
+                          <Td>{priorityLabel(t.priority)}</Td>
+                          <Td>{statusLabel(t.status)}</Td>
                           <Td>{t.requesterName ?? "—"}</Td>
-                          <Td>{t.resolvedAt ? formatDay(t.resolvedAt) : "—"}</Td>
+                          <Td><SolutionCell name={t.solutionName} /></Td>
+                          <Td>{t.resolvedAt ? fmtDate(t.resolvedAt) : "—"}</Td>
+                          <Td>
+                            {t.validation ? (
+                              <ValidationCell
+                                label={t.validation.label}
+                                code={t.validation.record?.code}
+                                title={t.validation.record ? `${t.validation.record.code} · ${fmtDateTime(t.validation.record.decidedAt, true)}` : undefined}
+                              />
+                            ) : "—"}
+                          </Td>
                         </tr>
                       ))}
                     </tbody>
@@ -984,10 +684,10 @@ export default function AdminReporteTecnicos() {
                     <tbody className="divide-y divide-gray-100 bg-white">
                       {report.activity.map((a) => (
                         <tr key={a.id} className="hover:bg-gray-50">
-                          <Td>{formatDay(a.createdAt)}</Td>
+                          <Td>{fmtDate(a.createdAt)}</Td>
                           <Td mono>{a.ticketNumber ?? "—"}</Td>
-                          <Td>{a.actionType}</Td>
-                          <Td>{a.description ?? a.reason ?? a.workDone ?? "—"}</Td>
+                          <Td>{actionLabel(a.actionType)}</Td>
+                          <Td>{printableReason(a.description ?? a.reason ?? a.workDone) || "—"}</Td>
                         </tr>
                       ))}
                     </tbody>
@@ -1013,10 +713,10 @@ export default function AdminReporteTecnicos() {
                       {report.escalations.map((e, i) => (
                         <tr key={i} className="hover:bg-gray-50">
                           <Td mono>{e.ticketNumber ?? "—"}</Td>
-                          <Td>{formatDay(e.createdAt)}</Td>
+                          <Td>{fmtDate(e.createdAt)}</Td>
                           <Td>{e.previousArea ? getResponsibleAreaLabel(e.previousArea) : "—"}</Td>
                           <Td>{e.newArea ? getResponsibleAreaLabel(e.newArea) : "—"}</Td>
-                          <Td>{e.reason ?? "—"}</Td>
+                          <Td>{printableReason(e.reason) || "—"}</Td>
                           <Td>{e.workDone ?? "—"}</Td>
                         </tr>
                       ))}
@@ -1035,7 +735,7 @@ export default function AdminReporteTecnicos() {
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
                     <thead className="bg-gray-50">
                       <tr>
-                        <Th>Ticket</Th><Th>Servicio</Th><Th>Problema</Th><Th>Resuelto</Th><Th>Resumen</Th>
+                        <Th>Ticket</Th><Th>Servicio</Th><Th>Ubicación</Th><Th>Problema</Th><Th>Resuelto</Th><Th>Solución utilizada</Th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
@@ -1043,9 +743,10 @@ export default function AdminReporteTecnicos() {
                         <tr key={i} className="hover:bg-gray-50">
                           <Td mono>{x.ticketNumber}</Td>
                           <Td>{x.serviceName ?? "—"}</Td>
+                          <Td>{x.location ?? "—"}</Td>
                           <Td>{x.problemDescription ?? "—"}</Td>
-                          <Td>{x.resolvedAt ? formatDay(x.resolvedAt) : "—"}</Td>
-                          <Td>{x.resolutionSummary ?? "—"}</Td>
+                          <Td>{x.resolvedAt ? fmtDate(x.resolvedAt) : "—"}</Td>
+                          <Td><SolutionCell name={x.solutionName} note={x.resolutionSummary} /></Td>
                         </tr>
                       ))}
                     </tbody>
@@ -1068,7 +769,7 @@ export default function AdminReporteTecnicos() {
                       {report.contributions.map((c, i) => (
                         <tr key={i} className="hover:bg-gray-50">
                           <Td mono>{c.ticketNumber ?? "—"}</Td>
-                          <Td>{formatDay(c.createdAt)}</Td>
+                          <Td>{fmtDate(c.createdAt)}</Td>
                           <Td>{c.description ?? "—"}</Td>
                         </tr>
                       ))}
@@ -1079,24 +780,16 @@ export default function AdminReporteTecnicos() {
             </Section>
           </div>
         )}
+
+        {!loadingReport && blockReport && <BlockReportView report={blockReport} generatedBy={admin?.name ?? admin?.email ?? "—"} />}
       </div>
     </Layout>
   );
 }
 
 // -----------------------------------------------------------------------------
-// Sub-componentes chicos para no repetir clases
+// Sub-componentes propios de esta pantalla
 // -----------------------------------------------------------------------------
-function Kpi({ label, value, accent }: { label: string; value: number; accent: string }) {
-  return (
-    <div className="card flex flex-col items-center justify-center text-center">
-      <span className={`mb-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${accent}`}>
-        {label}
-      </span>
-      <p className="text-2xl font-extrabold text-gray-900">{value}</p>
-    </div>
-  );
-}
 function QuickBtn({
   label,
   onClick,
@@ -1111,36 +804,9 @@ function QuickBtn({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:border-uta-400 hover:text-uta-800 disabled:opacity-50"
+      className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:border-uta-300 hover:text-uta-900 disabled:opacity-50"
     >
       {label}
     </button>
   );
-}
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-6">
-      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
-        {title}
-      </h2>
-      <div className="card p-0">{children}</div>
-    </div>
-  );
-}
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">
-      {children}
-    </th>
-  );
-}
-function Td({ children, mono }: { children: React.ReactNode; mono?: boolean }) {
-  return (
-    <td className={`px-4 py-3 text-gray-700 ${mono ? "font-mono font-semibold text-uta-900" : ""}`}>
-      {children}
-    </td>
-  );
-}
-function EmptyRow({ msg }: { msg: string }) {
-  return <p className="py-6 text-center text-sm text-gray-500">{msg}</p>;
 }

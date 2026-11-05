@@ -18,6 +18,9 @@ const storage = multer.diskStorage({
   },
 });
 
+export const HEIC_MESSAGE =
+  "Las fotos HEIC (iPhone) no son compatibles. Cambia la cámara a \"Más compatible\" o comparte la foto como JPG.";
+
 export const uploadAttachments = multer({
   storage,
   limits: {
@@ -25,8 +28,11 @@ export const uploadAttachments = multer({
     files: env.upload.maxFiles,
   },
   fileFilter: (_req, file, cb) => {
+    if (/^image\/hei[cf]/i.test(file.mimetype) || /\.hei[cf]$/i.test(file.originalname)) {
+      return cb(new Error(HEIC_MESSAGE));
+    }
     if (!env.upload.allowedMimeTypes.includes(file.mimetype)) {
-      return cb(new Error(`Tipo no permitido: ${file.mimetype}. Solo JPG/PNG.`));
+      return cb(new Error(`Tipo no permitido: ${file.mimetype}. Solo JPG, PNG o WebP.`));
     }
     cb(null, true);
   },

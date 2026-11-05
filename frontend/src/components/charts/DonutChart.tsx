@@ -6,6 +6,7 @@
 //   - tooltip nativo al pasar el cursor sobre cada segmento
 
 import { useMemo, useState } from "react";
+import { ringSlicePath } from "./chartMath";
 
 export interface DonutSlice {
   label: string;
@@ -30,23 +31,11 @@ export default function DonutChart({ title, data, centerLabel = "Total", size = 
   const cy = size / 2;
   const TAU = Math.PI * 2;
 
-  function polar(angle: number, r: number) {
-    return { x: cx + Math.cos(angle - Math.PI / 2) * r, y: cy + Math.sin(angle - Math.PI / 2) * r };
-  }
-
   let startAngle = 0;
   const slices = data.map((d, i) => {
     const fraction = total > 0 ? d.value / total : 0;
     const endAngle = startAngle + fraction * TAU;
-    const large = endAngle - startAngle > Math.PI ? 1 : 0;
-    const p1 = polar(startAngle, radius);
-    const p2 = polar(endAngle, radius);
-    const p3 = polar(endAngle, innerRadius);
-    const p4 = polar(startAngle, innerRadius);
-    const path =
-      total > 0
-        ? `M ${p1.x} ${p1.y} A ${radius} ${radius} 0 ${large} 1 ${p2.x} ${p2.y} L ${p3.x} ${p3.y} A ${innerRadius} ${innerRadius} 0 ${large} 0 ${p4.x} ${p4.y} Z`
-        : "";
+    const path = total > 0 && fraction > 0 ? ringSlicePath(cx, cy, radius, innerRadius, startAngle, endAngle) : "";
     const slice = { ...d, fraction, path, index: i };
     startAngle = endAngle;
     return slice;
@@ -65,6 +54,7 @@ export default function DonutChart({ title, data, centerLabel = "Total", size = 
                 key={s.label}
                 d={s.path}
                 fill={s.color}
+                fillRule="evenodd"
                 stroke="#fff"
                 strokeWidth={2}
                 onMouseEnter={() => setHover(s.index)}

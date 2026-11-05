@@ -5,6 +5,7 @@
 //   - "vertical":   barras verticales con etiquetas debajo.
 
 import { useMemo, useState } from "react";
+import { UTA_CHART_BLUE } from "./chartMath";
 
 export interface BarItem {
   label: string;
@@ -27,7 +28,7 @@ export default function BarChart({
   title,
   data,
   variant = "horizontal",
-  defaultColor = "#9c1f2c",
+  defaultColor = UTA_CHART_BLUE,
   height = 220,
   maxValue,
 }: Props) {

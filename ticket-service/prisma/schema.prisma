@@ -1,8 +1,15 @@
 // =============================================================================
-// ticket-service - Schema Prisma (ticket_db)
-// Cada ticket queda asociado a un usuario (FK lógica al auth_db) y a un
-// servicio (FK lógica al catalog_db). NO usamos foreign keys cruzadas:
-// la integridad se mantiene a nivel aplicación (microservicios independientes).
+// ticket-service - Schema Prisma para LABORATORIO SQL Server 2022 (Fase B).
+// Copia paralela de schema.prisma. NO reemplaza al schema de producción.
+//
+// Diferencias respecto a PostgreSQL:
+//   · provider="sqlserver"
+//   · @db.Uuid  -> @db.UniqueIdentifier
+//   · @db.Text  -> @db.NVarChar(Max)
+//   · DeviceToken.token @unique @db.NVarChar(512)  (tokens FCM ~150 chars,
+//                                                    512 deja margen; unique
+//                                                    exige tamaño finito)
+//   · @db.VarChar(255) sobrevive tal cual (Prisma-sqlserver lo respeta).
 // =============================================================================
 
 generator client {
@@ -10,219 +17,138 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlserver"
   url      = env("DATABASE_URL")
 }
 
-// -----------------------------------------------------------------------------
-// Estados del ciclo de vida del ticket.
-// `abierto` se muestra como "Pendiente" en la UI (label, no rename).
-// `escalado` lo introducirá HU-08 en sus transiciones; HU-07 solo lo lista
-// para que el panel pueda filtrarlo si en el futuro existen tickets en él.
-// -----------------------------------------------------------------------------
-enum TicketStatus {
-  abierto
-  en_proceso
-  escalado
-  resuelto
-  cerrado
-}
+// Sprint B: sin enums (limitación Prisma-SQLServer). Valores en
+// `ticket-service/src/domain/enums.ts`.
+//   TicketStatus:     abierto|en_proceso|escalado|resuelto|cerrado (NVarChar(16))
+//   Level:            N1|N2|N3|N4                                  (NVarChar(4))
+//   Priority:         baja|media|alta|critica                      (NVarChar(16))
+//   ResponsibleArea:  TECHNICIANS|DTIC                              (NVarChar(16))
+//   AssignmentStatus: unassigned|available|accepted|assigned_by_admin (NVarChar(24))
 
-// Mismo enum que catalog-service.Level. Lo replicamos porque cada microservicio
-// es autónomo y no comparte código con el catalog.
-enum Level {
-  N1
-  N2
-  N3
-  N4
-}
-
-// HU-06: prioridad del ticket. Si no se especifica al crear, se asume `media`.
-// El motor de enrutamiento sube el level cuando es `alta` o `critica`.
-enum Priority {
-  baja
-  media
-  alta
-  critica
-}
-
-// Sprint 3+: área responsable del ticket. Espeja al enum de catalog-service.
-// TICS fue renombrado a DTIC; GENERAL fue eliminado (registros migrados a
-// TECHNICIANS) — ambos cambios se aplicaron con la migración SQL.
-enum ResponsibleArea {
-  TECHNICIANS
-  DTIC
-}
-
-// Sprint 2 (rev): estado de asignación independiente del status del ticket.
-// `unassigned` cuando todavía no entra a la bandeja (estado raro/transitorio).
-// `available`  cuando está en la bandeja esperando que un técnico lo tome.
-// `accepted`   cuando un técnico lo aceptó por sí mismo.
-// `assigned_by_admin` cuando lo asignó el admin manualmente.
-enum AssignmentStatus {
-  unassigned
-  available
-  accepted
-  assigned_by_admin
-}
-
-// -----------------------------------------------------------------------------
-// tickets - Cabecera del ticket. `number` es el identificador humano (TK-YYYYMMDD-NNN).
-// `level_assigned` se rellena al crear el ticket consultando catalog-service.
-// -----------------------------------------------------------------------------
 model Ticket {
-  id                     String           @id @default(uuid()) @db.Uuid
+  id                     String           @id @default(uuid()) @db.UniqueIdentifier
   number                 String           @unique
-  userId                 String           @map("user_id") @db.Uuid     // FK lógica -> auth_db.users.id
-  userName               String?          @map("user_name")             // denormalizado para historial/listados
-  userEmail              String?          @map("user_email")            // denormalizado
-  serviceId              String           @map("service_id") @db.Uuid  // FK lógica -> catalog_db.services.id
-  serviceName            String?          @map("service_name")          // denormalizado
-  detail                 String           @db.Text
-  location               String?          @db.VarChar(255)
-  status                 TicketStatus     @default(abierto)
-  priority               Priority         @default(media)
-  // Sprint 2 (rev) - asignación por categoría/área:
-  responsibleArea        ResponsibleArea  @default(TECHNICIANS) @map("responsible_area")
-  assignmentStatus       AssignmentStatus @default(available) @map("assignment_status")
-  assignedTechnicianId   String?          @map("assigned_technician_id") @db.Uuid
+  userId                 String           @map("user_id") @db.UniqueIdentifier
+  userName               String?          @map("user_name")
+  userEmail              String?          @map("user_email")
+  serviceId              String           @map("service_id") @db.UniqueIdentifier
+  serviceName            String?          @map("service_name")
+  detail                 String   @db.NVarChar(Max)
+  location               String?  @db.VarChar(255)
+  status                 String   @default("abierto") @db.NVarChar(24)
+  priority               String   @default("media") @db.NVarChar(16)
+  responsibleArea        String   @default("TECHNICIANS") @db.NVarChar(16) @map("responsible_area")
+  assignmentStatus       String   @default("available") @db.NVarChar(24) @map("assignment_status")
+  assignedTechnicianId   String?          @map("assigned_technician_id") @db.UniqueIdentifier
   assignedTechnicianName String?          @map("assigned_technician_name")
   acceptedAt             DateTime?        @map("accepted_at")
-  // Sprint 2 (rev): cierre del ticket con vínculo a la base de conocimiento.
-  // `knowledgeArticleId` es FK lógica a catalog_db.knowledge_articles.id (sin FK
-  // física entre microservicios). Todos opcionales para no romper datos previos.
   resolvedAt             DateTime?        @map("resolved_at")
-  resolvedById           String?          @map("resolved_by_id") @db.Uuid
+  resolvedById           String?          @map("resolved_by_id") @db.UniqueIdentifier
   resolvedByName         String?          @map("resolved_by_name")
-  knowledgeArticleId     String?          @map("knowledge_article_id") @db.Uuid
-  resolutionSummary      String?          @db.Text @map("resolution_summary")
-  // Legacy HU-06/07/08: levelAssigned se mantiene calculado, pero la nueva
-  // lógica ya no filtra por él. Queda como referencia histórica.
-  levelAssigned          Level            @map("level_assigned")
+  knowledgeArticleId     String?          @map("knowledge_article_id") @db.UniqueIdentifier
+  resolutionSummary      String?          @map("resolution_summary") @db.NVarChar(Max)
+  levelAssigned          String   @db.NVarChar(4) @map("level_assigned")
   createdAt              DateTime         @default(now()) @map("created_at")
   updatedAt              DateTime         @updatedAt @map("updated_at")
 
-  attachments            Attachment[]
-  events                 TicketEvent[]
+  attachments Attachment[]
+  events      TicketEvent[]
+  acceptances SolutionAcceptance[]
 
-  @@map("tickets")
   @@index([userId])
   @@index([status])
   @@index([createdAt])
   @@index([responsibleArea])
   @@index([assignmentStatus])
   @@index([assignedTechnicianId])
+  @@map("tickets")
 }
 
-// -----------------------------------------------------------------------------
-// HU-08 - Acciones registrables sobre un ticket. Extensible para HU-09 (historial).
-// -----------------------------------------------------------------------------
-enum EventAction {
-  CREATED
-  CATEGORIZED
-  AVAILABLE
-  ACCEPTED
-  ASSIGNED
-  CONTRIBUTED
-  STATUS_CHANGED
-  ESCALATED
-  REASSIGNED
-  COMMENTED
-  RESOLVED
-  CLOSED
-}
+// Sprint B: EventAction / EventVisibility como String (ver src/domain/enums.ts).
+//   EventAction:     CREATED..CLOSED         (NVarChar(24))
+//   EventVisibility: public | internal       (NVarChar(16))
 
-// Sprint 2 (rev): visibilidad de un evento del historial.
-enum EventVisibility {
-  public
-  internal
-}
-
-// -----------------------------------------------------------------------------
-// HU-08 - Registro mínimo de eventos para auditoría / trazabilidad.
-// Diseñado para ser ampliado por HU-09 sin migraciones destructivas.
-// `performed_by_name` se denormaliza para que el historial siga siendo
-// legible si el usuario es renombrado o desactivado más adelante.
-// -----------------------------------------------------------------------------
 model TicketEvent {
-  id                   String           @id @default(uuid()) @db.Uuid
-  ticketId             String           @map("ticket_id") @db.Uuid
-  action               EventAction
+  id                   String   @id @default(uuid()) @db.UniqueIdentifier
+  ticketId             String   @map("ticket_id") @db.UniqueIdentifier
+  action               String   @db.NVarChar(24)
   title                String?
-  previousLevel        Level?           @map("previous_level")
-  newLevel             Level?           @map("new_level")
-  previousStatus       TicketStatus?    @map("previous_status")
-  newStatus            TicketStatus?    @map("new_status")
-  // Sprint 2 (rev): cambios de área y técnico para el escalamiento mejorado.
-  previousArea         ResponsibleArea? @map("previous_area")
-  newArea              ResponsibleArea? @map("new_area")
-  previousTechnicianId String?          @map("previous_technician_id") @db.Uuid
-  newTechnicianId      String?          @map("new_technician_id") @db.Uuid
-  reason               String?          @db.Text
-  workDone             String?          @db.Text @map("work_done")
-  description          String?          @db.Text
-  visibility           EventVisibility  @default(public)
-  performedBy          String           @map("performed_by") @db.Uuid
+  previousLevel        String?  @db.NVarChar(4) @map("previous_level")
+  newLevel             String?  @db.NVarChar(4) @map("new_level")
+  previousStatus       String?  @db.NVarChar(24) @map("previous_status")
+  newStatus            String?  @db.NVarChar(24) @map("new_status")
+  previousArea         String?  @db.NVarChar(16) @map("previous_area")
+  newArea              String?  @db.NVarChar(16) @map("new_area")
+  previousTechnicianId String?  @map("previous_technician_id") @db.UniqueIdentifier
+  newTechnicianId      String?  @map("new_technician_id") @db.UniqueIdentifier
+  reason               String?  @db.NVarChar(Max)
+  workDone             String?  @map("work_done") @db.NVarChar(Max)
+  description          String?  @db.NVarChar(Max)
+  visibility           String   @default("public") @db.NVarChar(16)
+  performedBy          String           @map("performed_by") @db.UniqueIdentifier
   performedByName      String           @map("performed_by_name")
   createdAt            DateTime         @default(now()) @map("created_at")
 
-  ticket               Ticket           @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  // onUpdate: NoAction para evitar el error de SQL Server sobre "múltiples
+  // cascadas" cuando el modelo ya tiene onDelete Cascade a la misma tabla.
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@map("ticket_events")
   @@index([ticketId])
   @@index([createdAt])
+  @@map("ticket_events")
 }
 
-// -----------------------------------------------------------------------------
-// HU-15 - Email Outbox.
-// Patrón outbox: cada notificación se crea como registro `pending` dentro de
-// la misma transacción que muta el ticket. El envío real ocurre FUERA de la
-// transacción (best-effort). Si falla SMTP, la acción del ticket NO se
-// revierte: el registro queda `failed` con `lastError` y `attempts` para
-// reintento posterior por POST /admin/email-outbox/process.
-// -----------------------------------------------------------------------------
-enum EmailStatus {
-  pending
-  sent
-  failed
-}
+// Sprint B: EmailStatus como String (ver src/domain/enums.ts).
+//   EmailStatus: pending | sent | failed  (NVarChar(16))
 
 model EmailOutbox {
-  id         String      @id @default(uuid()) @db.Uuid
-  ticketId   String?     @map("ticket_id") @db.Uuid
-  to         String
-  subject    String
-  htmlBody   String      @db.Text @map("html_body")
-  textBody   String?     @db.Text @map("text_body")
-  // Tipo de evento del ticket: TICKET_ACCEPTED, TICKET_ASSIGNED, TICKET_ESCALATED,
-  // TICKET_RESOLVED, TICKET_CONTRIBUTION. String para no acoplar a un enum nuevo.
-  eventType  String      @map("event_type")
-  status     EmailStatus @default(pending)
-  attempts   Int         @default(0)
-  lastError  String?     @db.Text @map("last_error")
-  sentAt     DateTime?   @map("sent_at")
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
+  id        String   @id @default(uuid()) @db.UniqueIdentifier
+  ticketId  String?  @map("ticket_id") @db.UniqueIdentifier
+  to        String
+  subject   String
+  htmlBody  String   @map("html_body") @db.NVarChar(Max)
+  textBody  String?  @map("text_body") @db.NVarChar(Max)
+  eventType String   @map("event_type")
+  status    String   @default("pending") @db.NVarChar(16)
+  attempts  Int         @default(0)
+  lastError String?     @map("last_error") @db.NVarChar(Max)
+  sentAt    DateTime?   @map("sent_at")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
 
-  @@map("email_outbox")
   @@index([status])
   @@index([ticketId])
   @@index([createdAt])
+  @@map("email_outbox")
 }
 
-// -----------------------------------------------------------------------------
-// attachments - Imágenes adjuntas al ticket.
-// Sprint 3+: se prioriza `image_url` (URL absoluta o relativa). `file_path` se
-// mantiene para compatibilidad con adjuntos históricos que vivían en disco
-// local (/app/uploads). El backend prioriza image_url; si es null cae a
-// /uploads/<file_path>. `storage_provider` documenta dónde vive la imagen:
-//   - "local"      → disco montado en el contenedor de ticket-service
-//   - "cloudinary" → CDN externo (Cloudinary), URL absoluta HTTPS
-// Nueva imagen NUNCA se guarda como Base64.
-// -----------------------------------------------------------------------------
+model DeviceToken {
+  id         String   @id @default(uuid()) @db.UniqueIdentifier
+  userId     String   @map("user_id") @db.UniqueIdentifier
+  // 512 chars alcanza para tokens FCM (~150-200) y deja margen; unique exige
+  // tamaño finito en SQL Server.
+  token      String   @unique @db.NVarChar(512)
+  platform   String
+  deviceId   String?  @map("device_id")
+  appVersion String?  @map("app_version")
+  isActive   Boolean  @default(true) @map("is_active")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([userId, isActive])
+  @@index([lastSeenAt])
+  @@map("device_tokens")
+}
+
 model Attachment {
-  id              String   @id @default(uuid()) @db.Uuid
-  ticketId        String   @map("ticket_id") @db.Uuid
+  id              String   @id @default(uuid()) @db.UniqueIdentifier
+  ticketId        String   @map("ticket_id") @db.UniqueIdentifier
   filePath        String?  @map("file_path")
   imageUrl        String?  @map("image_url")
   storageProvider String   @default("local") @map("storage_provider")
@@ -230,8 +156,62 @@ model Attachment {
   mimeType        String   @map("mime_type")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  ticket          Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@map("attachments")
   @@index([ticketId])
+  @@map("attachments")
+}
+
+// =============================================================================
+// Fase T — Aceptación digital de la solución por el usuario solicitante.
+//
+// AcceptanceTerms: texto de los términos por VERSIÓN. Una versión publicada no
+// cambia nunca (su SHA-256 queda registrado en cada decisión); un texto nuevo
+// exige una versión nueva. SolutionAcceptance: una fila por DECISIÓN (aceptar o
+// rechazar), con instantánea de quién, cuándo, qué solución y qué términos.
+// Ninguna se actualiza ni se borra (trigger INSTEAD OF UPDATE/DELETE creado al
+// arrancar ticket-service). Constancia de aceptación digital, NO firma
+// electrónica certificada.
+// =============================================================================
+model AcceptanceTerms {
+  version     String   @id @db.NVarChar(16)
+  title       String   @db.NVarChar(200)
+  text        String   @db.NVarChar(Max)
+  sha256      String   @db.NVarChar(64)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  acceptances SolutionAcceptance[]
+
+  @@map("acceptance_terms")
+}
+
+model SolutionAcceptance {
+  id              String   @id @default(uuid()) @db.UniqueIdentifier
+  // Código legible y único de la constancia (p. ej. VD-20261105-3F9A1C2B).
+  code            String   @unique @db.NVarChar(32)
+  ticketId        String   @map("ticket_id") @db.UniqueIdentifier
+  // ACCEPTED | REJECTED
+  decision        String   @db.NVarChar(16)
+  userId          String   @map("user_id") @db.UniqueIdentifier
+  userName        String   @map("user_name") @db.NVarChar(200)
+  userEmail       String   @map("user_email") @db.NVarChar(320)
+  userRole        String   @map("user_role") @db.NVarChar(32)
+  decidedAt       DateTime @default(now()) @map("decided_at")
+  termsVersion    String   @map("terms_version") @db.NVarChar(16)
+  termsSha256     String   @map("terms_sha256") @db.NVarChar(64)
+  // Solución sobre la que se decide: el evento RESOLVED vigente y su instantánea.
+  solutionEventId String?  @map("solution_event_id") @db.UniqueIdentifier
+  solutionSummary String?  @map("solution_summary") @db.NVarChar(Max)
+  technicianId    String?  @map("technician_id") @db.UniqueIdentifier
+  technicianName  String?  @map("technician_name") @db.NVarChar(200)
+  // Motivo obligatorio cuando decision = REJECTED.
+  reason          String?  @db.NVarChar(Max)
+
+  ticket Ticket          @relation(fields: [ticketId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  terms  AcceptanceTerms @relation(fields: [termsVersion], references: [version], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([ticketId])
+  @@index([decidedAt])
+  @@index([technicianId])
+  @@map("solution_acceptances")
 }

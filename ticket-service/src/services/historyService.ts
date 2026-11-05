@@ -3,14 +3,15 @@
 // muta un ticket (crear, escalar, cambiar estado, asignar, comentar, cerrar)
 // pueda invocarlo de forma consistente sin duplicar lógica.
 
+import { Prisma } from "@prisma/client";
+// Sprint B: enums de dominio movidos a src/domain/enums.ts.
 import {
   EventAction,
   EventVisibility,
   Level,
-  Prisma,
   ResponsibleArea,
   TicketStatus,
-} from "@prisma/client";
+} from "../domain/enums";
 
 export interface RecordEventInput {
   ticketId: string;
@@ -135,7 +136,13 @@ export function describeEvent(event: {
     case "COMMENTED":
       return `${performer} agregó un comentario`;
     case "RESOLVED":
-      return `${performer} marcó el ticket como resuelto`;
+      // Sprint I · P4 — el técnico marca resolución; queda pendiente la
+      // validación del solicitante.
+      return `${performer} propuso una solución (pendiente de validación)`;
+    case "USER_ACCEPTED":
+      return `${performer} aceptó la solución propuesta — ticket cerrado`;
+    case "USER_REJECTED_RESOLUTION":
+      return `${performer} rechazó la solución — el ticket vuelve a proceso`;
     case "CLOSED":
       return `${performer} cerró el ticket`;
     default:

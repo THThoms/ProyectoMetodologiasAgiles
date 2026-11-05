@@ -16,7 +16,8 @@
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { api } from "../lib/api";
-import { clearToken, getCurrentUser, isStaffRole, Role } from "../lib/auth";
+import { clearToken, getCurrentUser, isStaffRole, Role, roleLabel } from "../lib/auth";
+import { unregisterPushToken } from "../lib/pushNotifications";
 import { getAccountNameLabel } from "../lib/technician";
 
 interface LayoutProps {
@@ -26,9 +27,7 @@ interface LayoutProps {
 }
 
 function getRoleLabel(role: string): string {
-  if (role === "admin") return "Administrador";
-  if (role.startsWith("tech_")) return "Técnico";
-  return "Solicitante";
+  return roleLabel(role);
 }
 
 function getInitials(name: string | undefined | null): string {
@@ -153,6 +152,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/admin/stats",           label: "Estadísticas",   visibility: "admin", Icon: IconChart },
   { to: "/admin/historial",       label: "Historial",      visibility: "admin", Icon: IconHistory },
   { to: "/admin/reportes",        label: "Reportes",       visibility: "admin", Icon: IconReport },
+  { to: "/admin/bloques",         label: "Bloques",        visibility: "admin", Icon: IconReport },
   { to: "/admin/catalogo",        label: "Catálogo",       visibility: "admin", Icon: IconCatalog },
   // /admin/conocimiento = CRUD admin de la misma base. Rótulo distinto para
   // no confundir visualmente con la entrada de consulta de arriba.
@@ -209,6 +209,9 @@ export function Layout({ children, showSubnav = true }: LayoutProps) {
   }, [mobileOpen]);
 
   async function logout() {
+    // Sprint 4+ · Dar de baja el token FCM del dispositivo actual (Android).
+    // No bloquea el logout si falla o si no aplica (web).
+    await unregisterPushToken().catch(() => undefined);
     try {
       await api.post("/api/auth/logout");
     } catch {
@@ -227,8 +230,8 @@ export function Layout({ children, showSubnav = true }: LayoutProps) {
       {/* =====================================================================
           ZONA 1 · Header institucional (azul UTA, compacto)
       ===================================================================== */}
-      <header className="bg-uta-900 text-white">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
+      <header className="bg-uta-900 text-white shadow-[0_1px_0_rgba(255,255,255,0.08)]">
+        <div className="mx-auto flex h-14 w-full max-w-[1600px] items-center justify-between gap-4 px-4 sm:px-6">
           {/* Branding */}
           <Link
             to="/"
@@ -344,11 +347,11 @@ export function Layout({ children, showSubnav = true }: LayoutProps) {
       ===================================================================== */}
       {showNav && (
         <nav
-          className="hidden bg-uta-700 text-white shadow-sm lg:block"
+          className="hidden bg-uta-700 text-white shadow-[0_2px_4px_rgba(15,23,42,0.08)] lg:block"
           aria-label="Navegación principal"
         >
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-1 px-4 py-1 sm:px-6">
-            {items.map(({ to, label }) => {
+          <div className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-0.5 px-4 py-1.5 sm:px-6">
+            {items.map(({ to, label, Icon }) => {
               const active = activeTo === to;
               return (
                 <Link
@@ -356,14 +359,23 @@ export function Layout({ children, showSubnav = true }: LayoutProps) {
                   to={to}
                   aria-current={active ? "page" : undefined}
                   className={[
-                    "whitespace-nowrap rounded-md px-3.5 py-2 text-sm font-medium transition-colors duration-200",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60",
+                    "relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-2 text-sm transition-colors duration-200 xl:px-3",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
                     active
-                      ? "bg-uta-900 text-white shadow-sm"
-                      : "text-white/90 hover:bg-white/10 hover:text-white",
+                      ? "bg-white/15 font-semibold text-white"
+                      : "font-medium text-white/85 hover:bg-white/10 hover:text-white",
                   ].join(" ")}
                 >
-                  {label}
+                  <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                  <span>{label}</span>
+                  {/* Indicador inferior tipo pestaña (elegante, no ocupa espacio) */}
+                  <span
+                    aria-hidden="true"
+                    className={[
+                      "pointer-events-none absolute inset-x-2 -bottom-1.5 h-[2px] rounded-full transition-opacity duration-200",
+                      active ? "bg-white opacity-100" : "opacity-0",
+                    ].join(" ")}
+                  />
                 </Link>
               );
             })}
@@ -456,7 +468,7 @@ export function Layout({ children, showSubnav = true }: LayoutProps) {
           Contenido
       ===================================================================== */}
       <main className="flex-1 bg-uta-50">
-        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
+        <div className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 sm:py-8">{children}</div>
       </main>
 
       {/* Footer institucional */}

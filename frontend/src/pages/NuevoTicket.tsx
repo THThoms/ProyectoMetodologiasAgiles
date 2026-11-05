@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Layout } from "../components/Layout";
 import { api, extractApiError } from "../lib/api";
+import { ImageRejectedError, prepareImageForUpload } from "../lib/imageCompression";
 import { getCurrentUser } from "../lib/auth";
 import { getAccountNameLabel } from "../lib/technician";
 
@@ -22,7 +23,9 @@ interface CreatedTicket {
 const MAX_FILES = 5;
 const MAX_SIZE_MB = 5;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
-const ACCEPTED = ["image/jpeg", "image/png", "image/jpg"];
+// Fase R: JPG, PNG o WebP. Las imágenes se comprimen en el cliente (≤1920 px,
+// JPEG 0.8) antes de subir; HEIC se rechaza con un mensaje claro.
+const ACCEPT_ATTR = "image/jpeg,image/png,image/webp";
 
 // Sprint 3+: servicios cuyo flujo hace obligatoria la ubicación física.
 // Igual que antes; solo cambia la fuente de las opciones (catálogo API).
@@ -64,6 +67,7 @@ export default function NuevoTicket() {
   const [customLocation, setCustomLocation] = useState("");
 
   const [files, setFiles] = useState<File[]>([]);
+  const [processingImages, setProcessingImages] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -109,26 +113,34 @@ export default function NuevoTicket() {
     }
   }, [showLocation]);
 
-  function addFiles(incoming: FileList | File[]) {
+  async function addFiles(incoming: FileList | File[]) {
     setError(null);
     const arr = Array.from(incoming);
     const merged = [...files];
-    for (const f of arr) {
-      if (merged.length >= MAX_FILES) {
-        setError(`Máximo ${MAX_FILES} imágenes por ticket.`);
-        break;
+    setProcessingImages(true);
+    try {
+      for (const original of arr) {
+        if (merged.length >= MAX_FILES) {
+          setError(`Máximo ${MAX_FILES} imágenes por ticket.`);
+          break;
+        }
+        let f: File;
+        try {
+          f = await prepareImageForUpload(original);
+        } catch (e) {
+          setError(e instanceof ImageRejectedError ? e.message : `"${original.name}" no se pudo procesar.`);
+          continue;
+        }
+        if (f.size > MAX_SIZE_BYTES) {
+          setError(`"${original.name}" sigue superando los ${MAX_SIZE_MB} MB tras comprimirla.`);
+          continue;
+        }
+        // Evitar duplicados por nombre+tamaño
+        if (merged.some((x) => x.name === f.name && x.size === f.size)) continue;
+        merged.push(f);
       }
-      if (!ACCEPTED.includes(f.type)) {
-        setError(`"${f.name}" no es JPG/PNG.`);
-        continue;
-      }
-      if (f.size > MAX_SIZE_BYTES) {
-        setError(`"${f.name}" supera los ${MAX_SIZE_MB} MB.`);
-        continue;
-      }
-      // Evitar duplicados por nombre+tamaño
-      if (merged.some((x) => x.name === f.name && x.size === f.size)) continue;
-      merged.push(f);
+    } finally {
+      setProcessingImages(false);
     }
     setFiles(merged);
   }
@@ -352,7 +364,7 @@ export default function NuevoTicket() {
               onDrop={(e) => {
                 e.preventDefault();
                 setDragOver(false);
-                if (e.dataTransfer.files) addFiles(e.dataTransfer.files);
+                if (e.dataTransfer.files) void addFiles(e.dataTransfer.files);
               }}
               onClick={() => fileInputRef.current?.click()}
               className={`flex cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed px-4 py-8 text-center transition ${
@@ -369,15 +381,20 @@ export default function NuevoTicket() {
                 Arrastra imágenes aquí o haz clic para seleccionar
               </p>
               <p className="text-xs text-gray-500">
-                Hasta {MAX_FILES} archivos JPG/PNG · máx {MAX_SIZE_MB} MB c/u
+                {processingImages
+                  ? "Optimizando imágenes…"
+                  : `Hasta ${MAX_FILES} imágenes JPG, PNG o WebP · se optimizan automáticamente`}
               </p>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/jpg"
+                accept={ACCEPT_ATTR}
                 multiple
                 className="hidden"
-                onChange={(e) => e.target.files && addFiles(e.target.files)}
+                onChange={(e) => {
+                  if (e.target.files) void addFiles(e.target.files);
+                  e.target.value = "";
+                }}
               />
             </div>
 

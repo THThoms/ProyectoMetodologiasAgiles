@@ -9,9 +9,9 @@
 // /api/tickets/my-assigned?history=true (historial). No mezclamos en cliente.
 
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Layout } from "../components/Layout";
-import { api, extractApiError } from "../lib/api";
+import { api, extractApiError, isCancelled } from "../lib/api";
 import { getCurrentUser } from "../lib/auth";
 import { ContributionModal, EscalateV2Modal } from "../components/TicketActionModals";
 import ResolveTicketModal from "../components/ResolveTicketModal";
@@ -91,27 +91,75 @@ export default function MisTicketsAceptados() {
     mode: "contribute" | "escalate" | "resolve";
   } | null>(null);
   const [historyTicket, setHistoryTicket] = useState<Ticket | null>(null);
+  // Fase T: ticket abierto por enlace que no está en la lista (admin, o personal
+  // del área que aún no lo aceptó). El backend decide si puede verlo.
+  const [linkedTicket, setLinkedTicket] = useState<{ id: string; number: string; serviceName: string | null } | null>(null);
 
-  const load = useCallback(async () => {
+  // Sprint E (frontend hardening): AbortController para cancelar fetches al
+  // desmontar el componente y evitar que se acumulen requests zombies.
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
       const [act, hist] = await Promise.all([
-        api.get<MyAssignedResponse>("/api/tickets/my-assigned"),
-        api.get<MyAssignedResponse>("/api/tickets/my-assigned?history=true"),
+        api.get<MyAssignedResponse>("/api/tickets/my-assigned", { signal }),
+        api.get<MyAssignedResponse>("/api/tickets/my-assigned?history=true", { signal }),
       ]);
       setActive(act.data.tickets);
       setHistory(hist.data.tickets);
     } catch (err) {
+      if (isCancelled(err)) return;
       setError(extractApiError(err));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+    return () => ctrl.abort();
   }, [load]);
+
+  // Sprint 4+ · Deep-link desde una notificación push: `?openTicket=<id>`
+  // (o el fallback en sessionStorage) abre automáticamente el modal de
+  // historial del ticket cuando termina de cargar.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (loading) return;
+    const wanted =
+      searchParams.get("openTicket") ??
+      (sessionStorage.getItem("sd_open_ticket") || null);
+    if (!wanted) return;
+    const found =
+      active.find((t) => t.id.toLowerCase() === wanted.toLowerCase()) ??
+      history.find((t) => t.id.toLowerCase() === wanted.toLowerCase()) ??
+      null;
+    if (found) {
+      setHistoryTicket(found);
+      // Cambia a la pestaña adecuada si el ticket está en histórico.
+      if (history.some((t) => t.id.toLowerCase() === wanted.toLowerCase())) setTab("history");
+      // Consumir el param una sola vez.
+      sessionStorage.removeItem("sd_open_ticket");
+      if (searchParams.get("openTicket")) {
+        const next = new URLSearchParams(searchParams);
+        next.delete("openTicket");
+        setSearchParams(next, { replace: true });
+      }
+    } else {
+      // No está en mis listas: se pregunta al backend (403 si no tiene acceso).
+      sessionStorage.removeItem("sd_open_ticket");
+      if (searchParams.get("openTicket")) {
+        const next = new URLSearchParams(searchParams);
+        next.delete("openTicket");
+        setSearchParams(next, { replace: true });
+      }
+      api
+        .get<{ ticket: { number: string; serviceName: string | null } }>(`/api/tickets/history/${encodeURIComponent(wanted)}`)
+        .then((r) => setLinkedTicket({ id: wanted, number: r.data.ticket.number, serviceName: r.data.ticket.serviceName }))
+        .catch((err) => setError(extractApiError(err)));
+    }
+  }, [loading, active, history, searchParams, setSearchParams]);
 
   const acceptedByMe = (t: Ticket) =>
     t.assignedTechnicianId !== null && t.assignedTechnicianId === user?.userId;
@@ -213,7 +261,20 @@ export default function MisTicketsAceptados() {
                 classes: "bg-gray-100 text-gray-700",
               };
               return (
-                <div key={t.id} className="card">
+                <div
+                  key={t.id}
+                  className="card cursor-pointer transition hover:border-uta-300 hover:shadow-md"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setHistoryTicket(t)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setHistoryTicket(t);
+                    }
+                  }}
+                  aria-label={`Abrir detalle del ticket ${t.number}`}
+                >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -266,35 +327,48 @@ export default function MisTicketsAceptados() {
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-start justify-end gap-1.5">
+                    <div
+                      className="flex flex-wrap items-start justify-end gap-1.5"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <button
                         type="button"
-                        onClick={() => setHistoryTicket(t)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setHistoryTicket(t);
+                        }}
                         className="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                       >
-                        Ver historial
+                        Ver detalle
                       </button>
                       {tab === "active" && (
                         <>
                           <button
                             type="button"
-                            onClick={() =>
-                              setActionTicket({ ticket: t, mode: "contribute" })
-                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActionTicket({ ticket: t, mode: "contribute" });
+                            }}
                             className="rounded border border-blue-300 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
                           >
                             Aportar
                           </button>
                           <button
                             type="button"
-                            onClick={() => setActionTicket({ ticket: t, mode: "escalate" })}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActionTicket({ ticket: t, mode: "escalate" });
+                            }}
                             className="rounded bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-700"
                           >
                             Reescalar
                           </button>
                           <button
                             type="button"
-                            onClick={() => setActionTicket({ ticket: t, mode: "resolve" })}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActionTicket({ ticket: t, mode: "resolve" });
+                            }}
                             className="rounded bg-green-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-green-800"
                           >
                             Dar de alta / Resolver
@@ -362,6 +436,10 @@ export default function MisTicketsAceptados() {
             audience="staff"
             onClose={() => setHistoryTicket(null)}
           />
+        )}
+
+        {linkedTicket && (
+          <TicketHistoryModal ticket={linkedTicket} audience="staff" onClose={() => setLinkedTicket(null)} />
         )}
       </div>
     </Layout>

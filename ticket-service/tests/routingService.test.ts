@@ -1,4 +1,5 @@
-import { Level, Priority } from "@prisma/client";
+// Sprint B: enums desde el módulo de dominio.
+import { Level, Priority } from "../src/domain/enums";
 import {
   resolveLevel,
   NoRoutingRuleError,

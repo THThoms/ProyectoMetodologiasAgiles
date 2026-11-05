@@ -53,7 +53,7 @@ describe("GET /admin/technicians", () => {
     expect(res.body.technicians).toHaveLength(2);
     expect(res.body.technicians[0]).toMatchObject({
       id: TECH_ID,
-      role: "tech_n1",
+      role: "technician",
       areas: ["TECHNICIANS"],
     });
     expect(res.body.technicians[1].areas).toEqual(["DTIC"]);

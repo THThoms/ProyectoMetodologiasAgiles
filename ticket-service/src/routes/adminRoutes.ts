@@ -7,20 +7,24 @@
 //
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { Prisma, ResponsibleArea, TicketStatus, Priority } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+// Sprint B: enums migrados a src/domain/enums.ts.
+import { ResponsibleArea, TicketStatus, Priority } from "../domain/enums";
 import { prisma } from "../db/client";
 import { verifyJwt } from "../middleware/verifyJwt";
 import { recordTicketEvent } from "../services/historyService";
 import { fetchUsersByIds, fetchTechnicians } from "../services/authClient";
-import { areasForRole, canHandleArea } from "../services/areaService";
+import { areasForRole, canHandleArea, isTechRole, normalizeRole } from "../services/areaService";
 // HU-15: notificaciones + administración del outbox.
 import {
   notifyTicketAssigned,
   dispatchInBackground,
   processPendingEmails,
 } from "../services/emailOutboxService";
+import { dispatchPushInBackground } from "../services/fcmService";
 // HU-16: reporte individual del técnico.
 import { buildTechnicianReport } from "../services/technicianReportService";
+import { buildBlockReport } from "../services/blockReportService";
 
 const router = Router();
 
@@ -52,7 +56,7 @@ router.post("/tickets/:id/assign", verifyJwt, requireAdmin, async (req: Request,
     return res.status(409).json({ error: "No se puede asignar un ticket cerrado" });
   }
 
-  // Validar técnico contra auth_db (que esté activo y sea tech_*).
+  // Validar técnico contra auth_db (rol technician o dtic, del área del ticket).
   const userToken = (req.headers.authorization ?? "").slice("Bearer ".length).trim();
   let users;
   try {
@@ -65,7 +69,7 @@ router.post("/tickets/:id/assign", verifyJwt, requireAdmin, async (req: Request,
   if (!tech) {
     return res.status(400).json({ error: "Técnico no encontrado" });
   }
-  if (!tech.role.startsWith("tech_")) {
+  if (!isTechRole(tech.role)) {
     return res
       .status(400)
       .json({ error: `El usuario ${tech.name} no es técnico` });
@@ -120,6 +124,18 @@ router.post("/tickets/:id/assign", verifyJwt, requireAdmin, async (req: Request,
       return { updated: u, outboxId };
     });
     dispatchInBackground(outboxId);
+
+    // Sprint 4+ · Push al técnico asignado (solo si tiene dispositivo activo).
+    dispatchPushInBackground([technicianId], {
+      title: `Ticket ${updated.number} asignado`,
+      body: `${updated.serviceName ?? "Servicio"} · asignado por administrador`,
+      data: {
+        ticketId: updated.id,
+        eventType: "TICKET_ASSIGNED",
+      },
+      deepLink: `/tickets/${updated.id}`,
+    });
+
     return res.json({
       message: "Ticket asignado correctamente",
       ticket: updated,
@@ -193,13 +209,25 @@ router.get("/stats/tickets", verifyJwt, requireAdmin, async (req: Request, res: 
     ? { createdAt: createdAtFilter }
     : {};
 
-  // Predicado SQL equivalente para las consultas crudas. Las fechas se inyectan
-  // como literales ISO derivados de objetos Date validados (solo dígitos y
-  // [-:.TZ]), por lo que no hay riesgo de inyección.
-  const sqlClauses: string[] = [];
-  if (from) sqlClauses.push(`created_at >= '${from.toISOString()}'`);
-  if (to) sqlClauses.push(`created_at <= '${to.toISOString()}'`);
-  const rangeSql = sqlClauses.length ? sqlClauses.join(" AND ") : "";
+  // Sprint B (rewrite T-SQL): las consultas de estadísticas se reescriben en
+  // dialecto SQL Server 2022. Rango sobre `created_at`: usamos parámetros
+  // posicionales de `$queryRawUnsafe` — `@P1`, `@P2` — para eliminar
+  // interpolación y prevenir inyección. En PG dev las mismas funciones
+  // (DATEDIFF, GETUTCDATE, DATEADD, COUNT_BIG) no existen: el try/catch
+  // externo captura y mantiene los agregados en null (comportamiento previo
+  // ya presente en el try/catch original).
+  const rangeParams: Date[] = [];
+  const clauses: string[] = [];
+  const nextParam = () => `@P${rangeParams.length + 1}`;
+  if (from) {
+    clauses.push(`created_at >= ${nextParam()}`);
+    rangeParams.push(from);
+  }
+  if (to) {
+    clauses.push(`created_at <= ${nextParam()}`);
+    rangeParams.push(to);
+  }
+  const rangeSql = clauses.length ? clauses.join(" AND ") : "";
   const andRange = (base: string) =>
     rangeSql ? `${base} AND ${rangeSql}` : base;
 
@@ -260,16 +288,25 @@ router.get("/stats/tickets", verifyJwt, requireAdmin, async (req: Request, res: 
   let resolvedByTechnician: Array<{ technicianId: string | null; technicianName: string; count: number }> = [];
   let createdByDay: Array<{ date: string; count: number }> = [];
   try {
+    // Sprint B (T-SQL): reemplazos idiomáticos.
+    //  · EXTRACT(EPOCH FROM AVG(a - b))   →  AVG(CAST(DATEDIFF_BIG(SECOND, b, a) AS FLOAT))
+    //  · COUNT(*)::bigint                  →  CAST(COUNT_BIG(*) AS bigint)
+    //  · date_trunc('day', c)::date        →  CAST(c AS DATE)
+    //  · NOW() - INTERVAL '30 days'        →  DATEADD(DAY, -30, SYSUTCDATETIME())
+    //  · LIMIT N                           →  TOP N  (después de SELECT)
+    // Los rangos de fecha vienen por parámetros posicionales (@P1, @P2).
     const accRaw = await prisma.$queryRawUnsafe<Array<{ avg_secs: number | null }>>(
-      `SELECT EXTRACT(EPOCH FROM AVG(accepted_at - created_at)) AS avg_secs
-       FROM tickets WHERE ${andRange("accepted_at IS NOT NULL")}`
+      `SELECT AVG(CAST(DATEDIFF_BIG(SECOND, created_at, accepted_at) AS FLOAT)) AS avg_secs
+       FROM tickets WHERE ${andRange("accepted_at IS NOT NULL")}`,
+      ...rangeParams
     );
     avgAcceptSeconds = accRaw?.[0]?.avg_secs ?? null;
     if (avgAcceptSeconds != null) avgAcceptSeconds = Math.round(avgAcceptSeconds);
 
     const resRaw = await prisma.$queryRawUnsafe<Array<{ avg_secs: number | null }>>(
-      `SELECT EXTRACT(EPOCH FROM AVG(resolved_at - created_at)) AS avg_secs
-       FROM tickets WHERE ${andRange("resolved_at IS NOT NULL")}`
+      `SELECT AVG(CAST(DATEDIFF_BIG(SECOND, created_at, resolved_at) AS FLOAT)) AS avg_secs
+       FROM tickets WHERE ${andRange("resolved_at IS NOT NULL")}`,
+      ...rangeParams
     );
     avgResolveSeconds = resRaw?.[0]?.avg_secs ?? null;
     if (avgResolveSeconds != null) avgResolveSeconds = Math.round(avgResolveSeconds);
@@ -277,13 +314,13 @@ router.get("/stats/tickets", verifyJwt, requireAdmin, async (req: Request, res: 
     const resolvedByTechRaw = await prisma.$queryRawUnsafe<
       Array<{ technician_id: string | null; technician_name: string | null; count: bigint }>
     >(
-      `SELECT resolved_by_id AS technician_id, resolved_by_name AS technician_name,
-              COUNT(*)::bigint AS count
+      `SELECT TOP 20 resolved_by_id AS technician_id, resolved_by_name AS technician_name,
+              CAST(COUNT_BIG(*) AS bigint) AS count
        FROM tickets
        WHERE ${andRange("resolved_by_id IS NOT NULL")}
        GROUP BY resolved_by_id, resolved_by_name
-       ORDER BY count DESC
-       LIMIT 20`
+       ORDER BY count DESC`,
+      ...rangeParams
     );
     resolvedByTechnician = resolvedByTechRaw.map((r) => ({
       technicianId: r.technician_id,
@@ -293,20 +330,28 @@ router.get("/stats/tickets", verifyJwt, requireAdmin, async (req: Request, res: 
 
     // Serie temporal: tickets creados por día. Con rango usa el rango; sin
     // rango mantiene el comportamiento histórico (últimos 30 días).
-    const seriesWhere = rangeSql ? rangeSql : `created_at >= NOW() - INTERVAL '30 days'`;
+    const seriesParams: Date[] = [];
+    const seriesWhere = rangeSql
+      ? (() => {
+          seriesParams.push(...rangeParams);
+          return rangeSql;
+        })()
+      : "created_at >= DATEADD(DAY, -30, SYSUTCDATETIME())";
     const seriesRaw = await prisma.$queryRawUnsafe<Array<{ day: Date; count: bigint }>>(
-      `SELECT date_trunc('day', created_at)::date AS day, COUNT(*)::bigint AS count
+      `SELECT CAST(created_at AS DATE) AS day, CAST(COUNT_BIG(*) AS bigint) AS count
        FROM tickets
        WHERE ${seriesWhere}
-       GROUP BY day
-       ORDER BY day ASC`
+       GROUP BY CAST(created_at AS DATE)
+       ORDER BY day ASC`,
+      ...seriesParams
     );
     createdByDay = seriesRaw.map((r) => ({
       date: r.day instanceof Date ? r.day.toISOString().slice(0, 10) : String(r.day).slice(0, 10),
       count: Number(r.count),
     }));
   } catch {
-    /* En tests con mock no hay $queryRawUnsafe real */
+    /* En tests con mock (o en PG dev, ya que las funciones son T-SQL) los
+       agregados quedan en null — mismo fallback silencioso que ya existía. */
   }
 
   return res.json({
@@ -367,12 +412,53 @@ router.get("/technicians", verifyJwt, requireAdmin, async (req: Request, res: Re
       id: t.id,
       name: t.name,
       email: t.email,
-      role: t.role,
+      role: normalizeRole(t.role),
       isActive: t.isActive,
       areas: areasForRole(t.role),
+      block: t.block ?? null,
     })),
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fase R — Resumen de personal técnico POR ÁREA (sustituye al antiguo
+// "bloque" nivel·área; el esquema no tiene bloques físicos y los niveles
+// N1–N4 ya no existen como clasificación).
+//
+// GET /admin/technicians/summary
+//   → { total, active, inactive, byArea: [{ area, role, label, count }] }
+// Siempre incluye las dos áreas (TECHNICIANS y DTIC), aunque tengan 0.
+// ---------------------------------------------------------------------------
+const AREA_SUMMARY = [
+  { area: "TECHNICIANS", role: "technician", label: "Técnicos" },
+  { area: "DTIC", role: "dtic", label: "DTIC" },
+] as const;
+router.get(
+  "/technicians/summary",
+  verifyJwt,
+  requireAdmin,
+  async (req: Request, res: Response) => {
+    const userToken = (req.headers.authorization ?? "").slice("Bearer ".length).trim();
+    let technicians;
+    try {
+      technicians = await fetchTechnicians(userToken);
+    } catch (err) {
+      console.error("[admin/technicians/summary] error:", err);
+      return res.status(502).json({ error: "No se pudo obtener la lista de técnicos" });
+    }
+    const active = technicians.filter((t) => t.isActive && isTechRole(t.role));
+    const byArea = AREA_SUMMARY.map((a) => ({
+      ...a,
+      count: active.filter((t) => normalizeRole(t.role) === a.role).length,
+    }));
+    return res.json({
+      total: technicians.length,
+      active: active.length,
+      inactive: technicians.length - active.length,
+      byArea,
+    });
+  }
+);
 
 // ---------------------------------------------------------------------------
 // GET /admin/tickets/history -> Historial general filtrable. Devuelve TODOS
@@ -586,7 +672,7 @@ router.get(
           id: tech.id,
           name: tech.name,
           email: tech.email,
-          role: tech.role,
+          role: normalizeRole(tech.role),
           areas: areasForRole(tech.role),
         },
         { from, to }
@@ -598,5 +684,57 @@ router.get(
     }
   }
 );
+
+// ---------------------------------------------------------------------------
+// Fase T — GET /admin/reports/block?block=BLOQUE_1|BLOQUE_2&from&to
+//                                  [&technicianId][&status][&serviceId]
+// Solo admin. Técnicos del bloque desde auth-service; tickets del área
+// TECHNICIANS (DTIC excluido) desde ticket_db; validación digital real.
+// ---------------------------------------------------------------------------
+const blockReportSchema = z.object({
+  block: z.enum(["BLOQUE_1", "BLOQUE_2"], { errorMap: () => ({ message: "block debe ser BLOQUE_1 o BLOQUE_2" }) }),
+  from: dateOnly.optional(),
+  to: dateOnly.optional(),
+  technicianId: z.string().uuid().optional(),
+  status: z.enum(Object.values(TicketStatus) as [string, ...string[]]).optional(),
+  serviceId: z.string().uuid().optional(),
+});
+
+router.get("/reports/block", verifyJwt, requireAdmin, async (req: Request, res: Response) => {
+  const parsed = blockReportSchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Filtros inválidos", details: parsed.error.issues });
+  }
+  const q = parsed.data;
+  const from = q.from ? parseDayStart(q.from) : null;
+  const to = q.to ? parseDayEnd(q.to) : null;
+  if ((q.from && !from) || (q.to && !to)) return res.status(400).json({ error: "Fecha inválida" });
+  if (from && to && from.getTime() > to.getTime()) {
+    return res.status(400).json({ error: "from no puede ser posterior a to" });
+  }
+  const userToken = (req.headers.authorization ?? "").slice("Bearer ".length).trim();
+  let technicians;
+  try {
+    technicians = await fetchTechnicians(userToken, { block: q.block });
+  } catch (err) {
+    console.error("[admin/reports/block] error obteniendo técnicos:", err);
+    return res.status(502).json({ error: "No se pudo obtener la lista de técnicos" });
+  }
+  // Defensa adicional: solo rol technician con ese bloque (nunca DTIC).
+  technicians = technicians.filter((t) => normalizeRole(t.role) === "technician" && t.block === q.block);
+  if (q.technicianId && !technicians.some((t) => t.id.toLowerCase() === q.technicianId!.toLowerCase())) {
+    return res.status(404).json({ error: "El técnico no pertenece a ese bloque" });
+  }
+  try {
+    const report = await buildBlockReport(
+      { block: q.block, from, to, technicianId: q.technicianId ?? null, status: q.status ?? null, serviceId: q.serviceId ?? null },
+      technicians
+    );
+    return res.json(report);
+  } catch (err) {
+    console.error("[admin/reports/block] error construyendo reporte:", err);
+    return res.status(500).json({ error: "Error interno al generar el reporte" });
+  }
+});
 
 export default router;

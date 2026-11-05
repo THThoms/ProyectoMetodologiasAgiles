@@ -1,6 +1,7 @@
 import axios from "axios";
 import { env } from "../config/env";
-import { Level, ResponsibleArea } from "@prisma/client";
+// Sprint B: enums desde src/domain/enums.ts.
+import { Level, ResponsibleArea } from "../domain/enums";
 
 export interface CatalogRoutingRule {
   levelEntry: Level;

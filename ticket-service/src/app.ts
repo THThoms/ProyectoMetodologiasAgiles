@@ -2,11 +2,13 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import { checkDatabase, checkUploadsWritable } from "./health/readiness";
 import path from "path";
 import ticketRoutes from "./routes/ticketRoutes";
 import routingRoutes from "./routes/routingRoutes";
 import assignmentRoutes from "./routes/assignmentRoutes";
 import adminRoutes from "./routes/adminRoutes";
+import notificationRoutes from "./routes/notificationRoutes";
 import { env } from "./config/env";
 import { verifyJwt } from "./middleware/verifyJwt";
 
@@ -26,6 +28,18 @@ export function createApp() {
     res.json({ status: "ok", service: "ticket-service" });
   });
 
+  // Fase T — readiness (lo usa el healthcheck de Docker): base de datos real y
+  // volumen de imágenes escribible.
+  app.get("/health/ready", async (_req, res) => {
+    const [db, uploads] = await Promise.all([checkDatabase(), checkUploadsWritable(env.uploadDir)]);
+    const ready = db && uploads;
+    res.status(ready ? 200 : 503).json({
+      status: ready ? "ready" : "not_ready",
+      service: "ticket-service",
+      checks: { database: db ? "ok" : "fail", uploads: uploads ? "ok" : "fail" },
+    });
+  });
+
   // Sprint 2 (rev): los routers específicos (my/available/accept/accepted/escalate v2)
   // se montan ANTES del router genérico de tickets para que sus paths tengan
   // prioridad sobre `/:id`.
@@ -33,6 +47,7 @@ export function createApp() {
   app.use("/tickets", ticketRoutes);
   app.use("/routing", routingRoutes);
   app.use("/admin", adminRoutes);
+  app.use("/notifications", notificationRoutes);
 
   // Servir archivos adjuntos. Requiere JWT para no exponer imágenes públicamente.
   app.use(

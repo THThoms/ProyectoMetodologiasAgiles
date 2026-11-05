@@ -1,28 +1,28 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { decodeToken, landingRouteFor, saveToken } from "../lib/auth";
+import { exchangeSsoCode } from "../lib/session";
 
-// Recibe el token en el query (después del callback de Microsoft + auth-service),
-// lo guarda en localStorage y navega al dashboard según rol.
+// Fase R — Vuelta de Microsoft SSO (web). La URL trae un código opaco de un
+// solo uso (?code=…), NUNCA el JWT. Se canjea por POST y se limpia la URL.
 export default function AuthCallback() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const done = useRef(false);
 
   useEffect(() => {
-    const token = params.get("token");
+    if (done.current) return; // StrictMode monta dos veces: el código es de un solo uso
+    done.current = true;
+    const code = params.get("code");
     const errorCode = params.get("error");
+    window.history.replaceState(null, "", window.location.pathname); // el código sale de la barra de direcciones
 
-    if (!token) {
-      navigate(`/login?error=${errorCode ?? "missing_code"}`, { replace: true });
+    if (!code) {
+      navigate(`/login?error=${encodeURIComponent(errorCode ?? "missing_code")}`, { replace: true });
       return;
     }
-    const user = decodeToken(token);
-    if (!user) {
-      navigate("/login?error=auth_failed", { replace: true });
-      return;
-    }
-    saveToken(token, "microsoft");
-    navigate(landingRouteFor(user.role), { replace: true });
+    exchangeSsoCode(code)
+      .then((next) => navigate(next, { replace: true }))
+      .catch(() => navigate("/login?error=auth_failed", { replace: true }));
   }, [params, navigate]);
 
   return (

@@ -160,3 +160,51 @@ export function resolveImageUrl(
   if (attachment.filePath) return `/uploads/${attachment.filePath}`;
   return null;
 }
+
+/**
+ * Sprint L · P2 — serializa un attachment para el frontend con una URL
+ * consumible desde el navegador SIN exponer `/uploads/*` ni depender de la
+ * red interna de Docker.
+ *
+ *   · Cloudinary (imageUrl absoluta https://...):  se devuelve tal cual, el
+ *     CDN es público.
+ *   · Local (filePath + imageUrl `/uploads/x`):    se devuelve un endpoint
+ *     autenticado del propio gateway:
+ *         /api/tickets/{ticketId}/attachments/{a.id}
+ *
+ * Este endpoint sirve el binario tras validar JWT + acceso al ticket. El
+ * frontend lo consume con fetch + Bearer + blob URL para `<img>`.
+ */
+export interface AttachmentPayload {
+  id: string;
+  imageUrl: string | null;
+  filePath: string | null;
+  storageProvider: string;
+  mimeType?: string | null;
+  fileSize?: number | null;
+}
+export function serializeAttachment(
+  ticketId: string,
+  a: AttachmentPayload
+): AttachmentPayload {
+  // Cloudinary u otra URL absoluta pública → sin tocar.
+  if (a.imageUrl && /^https?:\/\//i.test(a.imageUrl)) {
+    return {
+      id: a.id,
+      imageUrl: a.imageUrl,
+      filePath: null,
+      storageProvider: a.storageProvider,
+      mimeType: a.mimeType,
+      fileSize: a.fileSize,
+    };
+  }
+  // Local: reescribimos imageUrl al endpoint autenticado.
+  return {
+    id: a.id,
+    imageUrl: `/api/tickets/${ticketId}/attachments/${a.id}`,
+    filePath: a.filePath ?? null,
+    storageProvider: a.storageProvider,
+    mimeType: a.mimeType,
+    fileSize: a.fileSize,
+  };
+}

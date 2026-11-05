@@ -36,15 +36,19 @@ export interface TechnicianLite {
   email: string;
   name: string;
   role: string;
+  /** Fase T: BLOQUE_1 | BLOQUE_2 | null (solo técnicos; DTIC siempre null). */
+  block?: string | null;
   isActive: boolean;
 }
 
 // Pide a auth-service la lista de técnicos. El endpoint en auth-service ya
 // valida que el caller sea admin (con el JWT que reenviamos).
-export async function fetchTechnicians(userToken: string): Promise<TechnicianLite[]> {
+// Fase T: filtro opcional por bloque (el filtrado lo hace auth-service).
+export async function fetchTechnicians(userToken: string, opts: { block?: string } = {}): Promise<TechnicianLite[]> {
   const url = `${env.authServiceUrl}/auth/technicians`;
   const response = await axios.get<{ technicians: TechnicianLite[] }>(url, {
     headers: { Authorization: `Bearer ${userToken}` },
+    params: opts.block ? { block: opts.block } : undefined,
     timeout: 5000,
   });
   return response.data.technicians ?? [];

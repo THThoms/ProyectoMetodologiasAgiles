@@ -31,7 +31,9 @@ export const env = {
   upload: {
     maxFileSizeBytes: 5 * 1024 * 1024, // 5 MB
     maxFiles: 5,
-    allowedMimeTypes: ["image/jpeg", "image/png", "image/jpg"],
+    // Fase R: el tipo real se valida por bytes (services/imageType.ts). Esta lista
+    // solo filtra el MIME declarado; los navegadores/Android a veces envían octet-stream.
+    allowedMimeTypes: ["image/jpeg", "image/png", "image/jpg", "image/webp", "application/octet-stream"],
   },
 
   email: {
@@ -64,5 +66,22 @@ export const env = {
       apiSecret: process.env.CLOUDINARY_API_SECRET ?? "",
       folder: process.env.CLOUDINARY_FOLDER ?? "servicedesk-uta",
     },
+  },
+
+  // Sprint 4+ · Firebase Cloud Messaging (push a la app Android).
+  // FCM_MODE:
+  //   - "off"      (default): no envía, no toca la BD para outbox de push.
+  //   - "log"      : imprime un resumen (sin secretos) por consola.
+  //   - "firebase" : envía real vía firebase-admin. Requiere las 3 credenciales
+  //                  del service account. La librería `firebase-admin` se carga
+  //                  con lazy require: si falta o las credenciales están vacías,
+  //                  el adapter cae a "log" con warning y no rompe el sistema.
+  fcm: {
+    mode: (process.env.FCM_MODE ?? "off").toLowerCase() as "off" | "log" | "firebase",
+    projectId: process.env.FCM_PROJECT_ID ?? "",
+    clientEmail: process.env.FCM_CLIENT_EMAIL ?? "",
+    // Las claves privadas de service account llegan con `\n` literales cuando
+    // se pasan por variable de entorno; los convertimos a saltos reales.
+    privateKey: (process.env.FCM_PRIVATE_KEY ?? "").replace(/\\n/g, "\n"),
   },
 };

@@ -4,14 +4,16 @@
 // El filtrado de eventos `internal` se hace en el backend cuando el caller es
 // el solicitante. Aquí se mantiene un filtro defensivo extra por `audience`.
 //
-// HU-14: botón "Imprimir historial". Abre una ventana limpia y aislada
-// (window.open) con encabezado institucional, datos del ticket y los eventos
+// HU-14: botón "Imprimir historial". Imprime desde un marco oculto, sin abrir ventanas,
+// con encabezado institucional, datos del ticket y los eventos
 // cronológicos. Se imprime EXACTAMENTE el mismo arreglo de eventos que se ve en
 // pantalla, por lo que el solicitante nunca imprime eventos internos.
 
 import { useEffect, useState } from "react";
 import { api, extractApiError } from "../lib/api";
 import { getResponsibleAreaLabel, getTechnicianNameLabel } from "../lib/technician";
+import AuthenticatedImage from "./AuthenticatedImage";
+import { printDocument, type DigitalValidationView } from "../lib/institutionalReport";
 
 export type HistoryAudience = "requester" | "staff";
 
@@ -37,6 +39,17 @@ interface HistoryEvent {
   createdAt: string;
 }
 
+// Sprint I · P3 — attachments los devuelve el backend con imageUrl absoluta
+// (Cloudinary) o relativa (/uploads/...).
+interface Attachment {
+  id: string;
+  imageUrl: string | null;
+  filePath: string | null;
+  storageProvider: string;
+  mimeType?: string | null;
+  fileSize?: number | null;
+}
+
 // Metadatos del ticket que entrega GET /tickets/history/:id (extendido en HU-14).
 interface TicketMeta {
   number?: string;
@@ -51,6 +64,7 @@ interface TicketMeta {
   resolvedByName?: string | null;
   resolutionSummary?: string | null;
   createdAt?: string | null;
+  attachments?: Attachment[];
 }
 
 interface Props {
@@ -99,7 +113,7 @@ function formatDate(iso: string | null | undefined): string {
   });
 }
 
-// Escapa texto para insertarlo de forma segura en el HTML de la ventana de impresión.
+// Escapa texto para insertarlo de forma segura en el HTML del documento de impresión.
 function esc(value: string | null | undefined): string {
   if (value == null) return "";
   return String(value)
@@ -110,11 +124,35 @@ function esc(value: string | null | undefined): string {
     .replace(/'/g, "&#39;");
 }
 
+// Sprint L · P2 — el backend ahora serializa attachments con URLs que el
+// navegador puede consumir:
+//   · absoluta https://...      → Cloudinary público
+//   · relativa /api/tickets/... → endpoint autenticado del gateway
+// AuthenticatedImage decide cómo cargar cada una.
+function attachmentSrc(a: Attachment): string | null {
+  if (!a.imageUrl) return null;
+  return a.imageUrl;
+}
+
 export default function TicketHistoryModal({ ticket, audience, onClose }: Props) {
   const [events, setEvents] = useState<HistoryEvent[]>([]);
   const [meta, setMeta] = useState<TicketMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Sprint I · P3 — imagen ampliada (lightbox simple).
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  // Fase T — validación digital del usuario (constancias reales del backend).
+  const [validation, setValidation] = useState<DigitalValidationView | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ validation: DigitalValidationView }>(`/api/tickets/${ticket.id}/acceptances`)
+      .then((r) => !cancelled && setValidation(r.data.validation))
+      .catch(() => !cancelled && setValidation(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [ticket.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -277,27 +315,9 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
   }
 
   function printHistory() {
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      setError("No se pudo abrir la ventana de impresión. Revisa el bloqueador de ventanas emergentes.");
-      return;
+    if (!printDocument(buildPrintHtml())) {
+      setError("No se pudo preparar la impresión. Recarga la página e inténtalo de nuevo.");
     }
-    win.document.open();
-    win.document.write(buildPrintHtml());
-    win.document.close();
-    win.focus();
-    // Esperamos a que el contenido se renderice antes de imprimir.
-    win.onload = () => {
-      win.print();
-    };
-    // Fallback por si onload no dispara (documentos escritos a veces ya están listos).
-    setTimeout(() => {
-      try {
-        win.print();
-      } catch {
-        /* la ventana pudo cerrarse manualmente */
-      }
-    }, 400);
   }
 
   const canPrint = !loading && !error;
@@ -335,6 +355,148 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
           {error && (
             <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
               {error}
+            </div>
+          )}
+          {/* Sprint L · P1 — Detalle rápido del ticket (número, servicio,
+              solicitante, ubicación, prioridad, área, estado, técnico y
+              fechas). Se muestra ANTES del historial para que quien reciba
+              el ticket vea de inmediato la información completa sin tener
+              que entrar al historial impreso. */}
+          {!loading && !error && meta && (
+            <div className="mb-5 rounded-md border border-gray-200 bg-gray-50 p-3">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Detalle del ticket
+              </h3>
+              <dl className="grid grid-cols-1 gap-x-3 gap-y-1 text-xs sm:grid-cols-2">
+                {meta.number && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Número</dt>
+                    <dd className="font-mono text-gray-800">{meta.number}</dd>
+                  </>
+                )}
+                {meta.serviceName && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Servicio</dt>
+                    <dd className="text-gray-800">{meta.serviceName}</dd>
+                  </>
+                )}
+                {meta.userName && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Solicitante</dt>
+                    <dd className="text-gray-800">{meta.userName}</dd>
+                  </>
+                )}
+                {meta.responsibleArea && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Área</dt>
+                    <dd className="text-gray-800">{getResponsibleAreaLabel(meta.responsibleArea)}</dd>
+                  </>
+                )}
+                {meta.priority && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Prioridad</dt>
+                    <dd className="text-gray-800">{PRIORITY_LABEL[meta.priority] ?? meta.priority}</dd>
+                  </>
+                )}
+                {meta.status && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Estado</dt>
+                    <dd className="text-gray-800">{STATUS_LABEL[meta.status] ?? meta.status}</dd>
+                  </>
+                )}
+                {meta.assignedTechnicianName && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Técnico asignado</dt>
+                    <dd className="text-gray-800">{getTechnicianNameLabel(meta.assignedTechnicianName)}</dd>
+                  </>
+                )}
+                {meta.createdAt && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Creado</dt>
+                    <dd className="text-gray-800">{formatDate(meta.createdAt)}</dd>
+                  </>
+                )}
+                {meta.acceptedAt && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Aceptado</dt>
+                    <dd className="text-gray-800">{formatDate(meta.acceptedAt)}</dd>
+                  </>
+                )}
+                {meta.resolvedAt && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Resuelto</dt>
+                    <dd className="text-gray-800">{formatDate(meta.resolvedAt)}</dd>
+                  </>
+                )}
+                {meta.resolvedByName && (
+                  <>
+                    <dt className="font-semibold text-gray-600">Resuelto por</dt>
+                    <dd className="text-gray-800">{getTechnicianNameLabel(meta.resolvedByName)}</dd>
+                  </>
+                )}
+              </dl>
+              {meta.resolutionSummary && (
+                <div className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-900">
+                  <span className="font-semibold">Resumen de resolución:</span>{" "}
+                  {meta.resolutionSummary}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Fase T — Validación digital del usuario */}
+          {!loading && !error && validation && validation.status !== "SIN_SOLUCION" && (
+            <div className="mb-5 rounded border border-uta-300 bg-uta-50 p-3 text-xs" data-testid="digital-validation">
+              <h3 className="mb-1 font-semibold uppercase tracking-wide text-uta-900">Validación digital del usuario</h3>
+              <p className="font-bold text-uta-900">{validation.label}</p>
+              {validation.record && (
+                <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-0.5 sm:grid-cols-2">
+                  <div><dt className="inline text-gray-500">Usuario: </dt><dd className="inline">{validation.record.userName} ({validation.record.userEmail})</dd></div>
+                  <div><dt className="inline text-gray-500">Código: </dt><dd className="inline font-mono">{validation.record.code}</dd></div>
+                  <div><dt className="inline text-gray-500">Fecha y hora: </dt><dd className="inline">{formatDate(validation.record.decidedAt)}</dd></div>
+                  <div><dt className="inline text-gray-500">Términos: </dt><dd className="inline">versión {validation.record.termsVersion}</dd></div>
+                  {validation.record.reason && (
+                    <div className="sm:col-span-2"><dt className="inline text-gray-500">Motivo del rechazo: </dt><dd className="inline">{validation.record.reason}</dd></div>
+                  )}
+                </dl>
+              )}
+              {validation.history.length > 1 && (
+                <p className="mt-1 text-gray-600">Decisiones registradas: {validation.history.length} (el historial conserva todas).</p>
+              )}
+            </div>
+          )}
+
+          {/* Sprint I · P3 + Sprint L · P2 — Galería de attachments con
+              AuthenticatedImage. Cada thumbnail carga vía fetch autenticado
+              (JWT Bearer + blob URL) para los attachments locales; los
+              Cloudinary usan directamente el CDN público. */}
+          {!loading && !error && (meta?.attachments?.length ?? 0) > 0 && (
+            <div className="mb-5">
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Imágenes adjuntas ({meta?.attachments?.length})
+              </h3>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {meta?.attachments?.map((a) => {
+                  const url = attachmentSrc(a);
+                  if (!url) return null;
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      onClick={() => setLightbox(url)}
+                      className="group relative overflow-hidden rounded border border-gray-200 bg-gray-50 hover:border-uta-600"
+                      title="Click para ampliar"
+                    >
+                      <AuthenticatedImage
+                        src={url}
+                        alt="Adjunto del ticket"
+                        className="h-24 w-full object-cover transition group-hover:opacity-90"
+                        placeholderClassName="h-24"
+                      />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
           {!loading && !error && events.length === 0 && (
@@ -404,6 +566,33 @@ export default function TicketHistoryModal({ ticket, audience, onClose }: Props)
           </button>
         </div>
       </div>
+
+      {/* Sprint I · P3 + Sprint L · P2 — lightbox overlay con carga autenticada */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div onClick={(e) => e.stopPropagation()} className="max-h-[90vh] max-w-[92vw]">
+            <AuthenticatedImage
+              src={lightbox}
+              alt="Adjunto ampliado"
+              className="max-h-[90vh] max-w-[92vw] rounded shadow-2xl"
+              placeholderClassName="h-64"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setLightbox(null)}
+            className="absolute right-6 top-6 rounded-full bg-white/90 px-3 py-1 text-sm font-semibold text-gray-800 hover:bg-white"
+            aria-label="Cerrar imagen ampliada"
+          >
+            Cerrar ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }

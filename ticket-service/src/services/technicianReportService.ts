@@ -11,6 +11,7 @@
 //   - Sin datos, todo retorna 0 / arrays vacíos (no rompe gráficos ni resumen).
 
 import { Prisma } from "@prisma/client";
+import { digitalValidation, type DigitalValidation } from "./acceptanceService";
 import { prisma } from "../db/client";
 
 export interface TechnicianRef {
@@ -45,6 +46,10 @@ export interface ReportTicketRow {
   title: string;
   detail: string | null;
   serviceName: string | null;
+  /** Ubicación del ticket (p. ej. el laboratorio); null si no se indicó. */
+  location: string | null;
+  /** Nombre de la solución utilizada: título del artículo de conocimiento aplicado. */
+  solutionName: string | null;
   responsibleArea: string;
   priority: string;
   status: string;
@@ -56,6 +61,8 @@ export interface ReportTicketRow {
   resolvedByName: string | null;
   resolutionSummary: string | null;
   knowledgeArticleId: string | null;
+  /** Fase T: validación digital del usuario (solo registros reales de ticket_db). */
+  validation: DigitalValidation;
 }
 
 export interface ReportActivityRow {
@@ -88,6 +95,8 @@ export interface ReportEscalation {
 export interface ReportResolution {
   ticketNumber: string;
   serviceName: string | null;
+  location: string | null;
+  solutionName: string | null;
   problemDescription: string | null;
   resolvedAt: Date | null;
   resolutionSummary: string | null;
@@ -282,13 +291,41 @@ export async function buildTechnicianReport(
     ).size,
   };
 
+  // Fase T: constancias de aceptación/rechazo de estos tickets (una consulta).
+  const acceptanceRows = tickets.length
+    ? await prisma.solutionAcceptance.findMany({ where: { ticketId: { in: tickets.map((t) => t.id) } } })
+    : [];
+  const acceptancesByTicket = new Map<string, typeof acceptanceRows>();
+  for (const a of acceptanceRows) {
+    const k = a.ticketId.toLowerCase();
+    acceptancesByTicket.set(k, [...(acceptancesByTicket.get(k) ?? []), a]);
+  }
+
+  // Solución vigente de cada ticket: el último evento RESOLVED, aunque lo registrara
+  // otro técnico o quede fuera del rango (`events` solo trae los del técnico).
+  const resolvedRows = tickets.length
+    ? await prisma.ticketEvent.findMany({
+        where: { ticketId: { in: tickets.map((t) => t.id) }, action: "RESOLVED" },
+        orderBy: { createdAt: "desc" },
+        select: { ticketId: true, workDone: true, action: true },
+      })
+    : [];
+  const solutionNameByTicket = new Map<string, string>();
+  for (const e of resolvedRows ?? []) {
+    const k = e.ticketId.toLowerCase();
+    if (e.action === "RESOLVED" && !solutionNameByTicket.has(k) && e.workDone?.trim()) solutionNameByTicket.set(k, e.workDone.trim());
+  }
+
   const ticketRows: ReportTicketRow[] = tickets.map((t) => ({
+    validation: digitalValidation(t, acceptancesByTicket.get(t.id.toLowerCase()) ?? []),
     id: t.id,
     number: t.number,
     createdAt: t.createdAt,
     title: t.number, // el modelo no tiene "title" separado; el número humano hace de título
     detail: t.detail,
     serviceName: t.serviceName,
+    location: t.location ?? null,
+    solutionName: solutionNameByTicket.get(t.id.toLowerCase()) ?? null,
     responsibleArea: t.responsibleArea,
     priority: t.priority,
     status: t.status,
@@ -345,6 +382,8 @@ export async function buildTechnicianReport(
     .map((t) => ({
       ticketNumber: t.number,
       serviceName: t.serviceName,
+      location: t.location ?? null,
+      solutionName: solutionNameByTicket.get(t.id.toLowerCase()) ?? null,
       problemDescription: t.detail,
       resolvedAt: t.resolvedAt,
       resolutionSummary: t.resolutionSummary,

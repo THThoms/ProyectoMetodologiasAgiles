@@ -2,14 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, extractApiError } from "../lib/api";
 import { MicrosoftLogo } from "../components/MicrosoftLogo";
-import { decodeToken, landingRouteFor, saveToken } from "../lib/auth";
+import { completeLogin } from "../lib/session";
+import { isCapacitorAndroid, openMicrosoftSsoInSystemBrowser } from "../lib/ssoMobile";
+import { type AuthConfig, SAFE_AUTH_CONFIG, fetchAuthConfigWithRetry } from "../lib/authConfig";
 
-interface AuthConfig {
-  ssoConfigured: boolean;
-  devLoginEnabled: boolean;
-  allowedDomain: string;
-  microsoftSimulateEnabled?: boolean;
-}
+const loadAuthConfig = () => api.get<AuthConfig>("/api/auth/config").then((r) => r.data);
 
 function errorMessageFor(code: string | null, domain: string): string | null {
   if (!code) return null;
@@ -21,6 +18,8 @@ function errorMessageFor(code: string | null, domain: string): string | null {
       return "Microsoft no devolvió la información necesaria.";
     case "auth_failed":
       return "No fue posible completar la autenticación. Inténtalo de nuevo.";
+    case "invalid_state":
+      return "El inicio de sesión con Microsoft caducó o se abrió en otro navegador. Vuelve a intentarlo desde esta página.";
     case "sso_not_configured":
       return "El SSO con Microsoft aún no está configurado en este entorno. Revisa las variables MICROSOFT_* en .env.";
     case "session_expired":
@@ -34,6 +33,8 @@ export default function Login() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [config, setConfig] = useState<AuthConfig | null>(null);
+  // true solo si la configuración vino del servidor (no de los valores seguros por defecto).
+  const [configFromServer, setConfigFromServer] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -43,17 +44,23 @@ export default function Login() {
   const urlError = params.get("error");
 
   useEffect(() => {
-    api
-      .get<AuthConfig>("/api/auth/config")
-      .then((r) => setConfig(r.data))
-      .catch(() =>
-        setConfig({
-          ssoConfigured: false,
-          devLoginEnabled: false,
-          allowedDomain: "uta.edu.ec",
-          microsoftSimulateEnabled: true,
-        })
-      );
+    // Reintenta: tras reiniciar el servidor, el gateway puede responder 502
+    // unos segundos mientras auth-service arranca.
+    let cancelled = false;
+    fetchAuthConfigWithRetry(loadAuthConfig, undefined, undefined, () => cancelled).then((cfg) => {
+      if (cancelled) return;
+      if (cfg) {
+        setConfig(cfg);
+        setConfigFromServer(true);
+      } else {
+        // Fase P · seguridad: si no se puede leer la config, NUNCA asumir
+        // que el login simulado está disponible.
+        setConfig(SAFE_AUTH_CONFIG);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const domain = config?.allowedDomain ?? "uta.edu.ec";
@@ -78,9 +85,9 @@ export default function Login() {
         password: password.trim(),
       });
       const { token, authProvider } = res.data;
-      saveToken(token, authProvider ?? "local");
-      const user = decodeToken(token);
-      navigate(user ? landingRouteFor(user.role) : "/", { replace: true });
+      // Fase R: completeLogin envía a /cambiar-contrasena si la contraseña es temporal.
+      const next = completeLogin(token, authProvider ?? "local");
+      navigate(next ?? "/", { replace: true });
     } catch (err) {
       setError(extractApiError(err));
     } finally {
@@ -95,17 +102,45 @@ export default function Login() {
     setError(null);
     setMsLoading(true);
 
-    // Si el SSO real está configurado, redirigimos al flujo de Azure AD
+    // Si la configuración no llegó a cargarse del servidor, se pide de nuevo
+    // ahora (el botón ya no queda inutilizado hasta recargar la página).
+    let cfg = config;
+    if (!configFromServer) {
+      const fresh = await fetchAuthConfigWithRetry(loadAuthConfig, [0, 1500]);
+      if (fresh) {
+        cfg = fresh;
+        setConfig(fresh);
+        setConfigFromServer(true);
+      }
+    }
+    const ssoReady = Boolean(cfg?.ssoConfigured);
+    const msSimulateReady = Boolean(cfg?.microsoftSimulateEnabled);
+
+    // Si el SSO real está configurado, redirigimos al flujo de Azure AD.
     if (ssoReady) {
       const apiBase =
         (import.meta.env.VITE_API_URL as string | undefined) ??
         "http://localhost:8080";
+      const hint = email.trim() || undefined;
 
-      const hint = email.trim();
+      // Sprint 4+ · Android: usar Chrome Custom Tabs (Browser.open). El
+      // WebView de Capacitor no puede completar el flujo Microsoft (COOP,
+      // cookies, redirect al dominio del backend). El backend responderá al
+      // deep-link ec.uta.servicedesk://auth/success?token=… que App.tsx
+      // captura vía App.addListener('appUrlOpen').
+      if (isCapacitorAndroid()) {
+        try {
+          await openMicrosoftSsoInSystemBrowser(apiBase, hint);
+        } catch (err) {
+          setError(extractApiError(err));
+          setMsLoading(false);
+        }
+        return;
+      }
+
+      // Web: full-page redirect (Microsoft envía COOP=same-origin que
+      // corta window.opener, así que popup+postMessage no funciona).
       const qs = hint ? `?login_hint=${encodeURIComponent(hint)}` : "";
-      // Full-page redirect: Microsoft envía COOP=same-origin que corta
-      // window.opener, así que el patrón popup+postMessage no funciona.
-      // El callback regresa a /auth/success?token=... que AuthCallback maneja.
       window.location.href = `${apiBase}/api/auth/microsoft${qs}`;
       return;
     }
@@ -117,9 +152,8 @@ export default function Login() {
           email: email.trim() || "docente@uta.edu.ec",
         });
         const { token, authProvider } = res.data;
-        saveToken(token, authProvider ?? "microsoft-simulated");
-        const user = decodeToken(token);
-        navigate(user ? landingRouteFor(user.role) : "/", { replace: true });
+        const next = completeLogin(token, authProvider ?? "microsoft-simulated");
+        navigate(next ?? "/", { replace: true });
       } catch (err) {
         setError(extractApiError(err));
       } finally {

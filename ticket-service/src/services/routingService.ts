@@ -3,7 +3,8 @@
 // nivel técnico que debe atender el ticket. Sin acceso a BD para que sea
 // testeable de forma aislada.
 
-import { Level, Priority } from "@prisma/client";
+// Sprint B: Level / Priority viven en src/domain/enums.ts.
+import { Level, Priority } from "../domain/enums";
 
 // Forma mínima de una regla de enrutamiento tal como la expone catalog-service.
 // Coincide con el modelo `RoutingRule` de catalog-service.

@@ -13,8 +13,20 @@
 // acción para garantizar trazabilidad atómica.
 
 import { Router, Request, Response } from "express";
+import {
+  AcceptanceDecision,
+  acceptanceCode,
+  currentSolution,
+  currentTerms,
+  digitalValidation,
+  isTermsReady,
+  serializeAcceptance,
+} from "../services/acceptanceService";
+import { ticketAccess } from "../services/areaService";
 import { z } from "zod";
-import { Prisma, ResponsibleArea, EventVisibility, TicketStatus } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+// Sprint B: enums migrados a src/domain/enums.ts.
+import { ResponsibleArea, EventVisibility, TicketStatus } from "../domain/enums";
 import { prisma } from "../db/client";
 import { verifyJwt } from "../middleware/verifyJwt";
 import { recordTicketEvent } from "../services/historyService";
@@ -33,6 +45,8 @@ import {
   notifyTicketResolved,
   dispatchInBackground,
 } from "../services/emailOutboxService";
+import { dispatchPushInBackground } from "../services/fcmService";
+import { fetchTechnicians } from "../services/authClient";
 
 const router = Router();
 
@@ -228,7 +242,7 @@ router.get("/accepted", verifyJwt, async (req: Request, res: Response) => {
   if (!includeResolved) excludedStatuses.push("resuelto");
   if (!includeClosed) excludedStatuses.push("cerrado");
 
-  // admin ve todos los asignados; tech_* ve los suyos.
+  // admin ve todos los asignados; technician/dtic ve los suyos.
   const base: Prisma.TicketWhereInput =
     role === "admin"
       ? { assignedTechnicianId: { not: null } }
@@ -445,20 +459,20 @@ router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
 
   try {
     const { updated, outboxId } = await prisma.$transaction(async (tx) => {
+      // Sprint I · P1 (fix): el escalamiento SIEMPRE libera el ticket a la
+      // bandeja, aunque el área no cambie. Antes, con `areaChanged=false` el
+      // ticket se quedaba asignado al mismo técnico y aparecía como
+      // "escalado" en Mis Aceptados — el técnico anterior no podía moverlo
+      // y ningún otro técnico del área lo veía como disponible.
       const u = await tx.ticket.update({
         where: { id: req.params.id },
         data: {
           status: "escalado",
           responsibleArea: newArea,
-          // Si cambia de área, el ticket vuelve a la bandeja sin asignar.
-          ...(areaChanged
-            ? {
-                assignedTechnicianId: null,
-                assignedTechnicianName: null,
-                acceptedAt: null,
-                assignmentStatus: "available",
-              }
-            : {}),
+          assignedTechnicianId: null,
+          assignedTechnicianName: null,
+          acceptedAt: null,
+          assignmentStatus: "available",
         },
       });
       await recordTicketEvent(tx, {
@@ -466,13 +480,13 @@ router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
         action: "ESCALATED",
         title: areaChanged
           ? `Escalado de ${ticket.responsibleArea} a ${newArea}`
-          : "Escalamiento dentro del área",
+          : `Reescalado dentro de ${ticket.responsibleArea} — disponible para el área`,
         previousStatus: ticket.status,
         newStatus: "escalado",
         previousArea: ticket.responsibleArea,
         newArea,
         previousTechnicianId: ticket.assignedTechnicianId,
-        newTechnicianId: areaChanged ? null : ticket.assignedTechnicianId,
+        newTechnicianId: null,
         reason,
         workDone,
         description: description ?? null,
@@ -497,6 +511,39 @@ router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
       return { updated: u, outboxId };
     });
     dispatchInBackground(outboxId);
+
+    // Sprint 4+ · Ahora que el escalamiento SIEMPRE libera el ticket, avisamos
+    // a los técnicos elegibles de la nueva área (aunque no haya cambiado) —
+    // ellos tienen el ticket "nuevo" en su bandeja.
+    {
+      const userToken = (req.headers.authorization ?? "").slice("Bearer ".length).trim();
+      const previousTechnicianId = ticket.assignedTechnicianId;
+      void (async () => {
+        try {
+          const techs = await fetchTechnicians(userToken);
+          const eligibleIds = techs
+            .filter((t) => t.isActive && areasForRole(t.role).includes(newArea))
+            // No spamear al técnico que acaba de escalar.
+            .filter((t) => t.id !== previousTechnicianId)
+            .map((t) => t.id);
+          if (eligibleIds.length > 0) {
+            dispatchPushInBackground(eligibleIds, {
+              title: `Ticket ${updated.number} disponible en tu área`,
+              body: `${ticket.serviceName ?? "Servicio"} · motivo: ${reason.slice(0, 60)}`,
+              data: {
+                ticketId: updated.id,
+                eventType: "TICKET_ESCALATED",
+                area: String(newArea),
+              },
+              deepLink: `/tickets/${updated.id}`,
+            });
+          }
+        } catch (err) {
+          console.error("[escalate] push falló (best-effort):", err);
+        }
+      })();
+    }
+
     return res.json({
       message: "Ticket escalado correctamente",
       ticket: {
@@ -592,7 +639,12 @@ router.post("/:id/resolve", verifyJwt, async (req: Request, res: Response) => {
       error: "El ticket no está aceptado/asignado y no puede resolverse",
     });
   }
-  if (ticket.status === TicketStatus.resuelto || ticket.status === TicketStatus.cerrado) {
+  // Sprint I · P4 — pendiente_validacion también bloquea segundo resolve.
+  if (
+    ticket.status === TicketStatus.resuelto ||
+    ticket.status === TicketStatus.cerrado ||
+    ticket.status === TicketStatus.pendiente_validacion
+  ) {
     return res
       .status(409)
       .json({ error: `El ticket ya está ${ticket.status} y no puede resolverse de nuevo` });
@@ -642,12 +694,14 @@ router.post("/:id/resolve", verifyJwt, async (req: Request, res: Response) => {
   }
 
   // 2) Actualizar el ticket y registrar evento en una transacción atómica.
+  // Sprint I · P4 — el técnico deja el ticket en `pendiente_validacion` para
+  // que el solicitante lo valide. Solo tras USER_ACCEPTED pasa a `resuelto`.
   try {
     const { updated, outboxId } = await prisma.$transaction(async (tx) => {
       const u = await tx.ticket.update({
         where: { id: req.params.id },
         data: {
-          status: TicketStatus.resuelto,
+          status: TicketStatus.pendiente_validacion,
           resolvedAt: new Date(),
           resolvedById: req.user!.userId,
           resolvedByName: req.user!.name,
@@ -658,9 +712,9 @@ router.post("/:id/resolve", verifyJwt, async (req: Request, res: Response) => {
       await recordTicketEvent(tx, {
         ticketId: req.params.id,
         action: "RESOLVED",
-        title: `Ticket resuelto con solución "${knowledgeTitle}"`,
+        title: `Solución propuesta — pendiente validación del solicitante`,
         previousStatus: ticket.status,
-        newStatus: TicketStatus.resuelto,
+        newStatus: TicketStatus.pendiente_validacion,
         reason:
           data.mode === "existingKnowledge"
             ? `Solución existente aplicada (${knowledgeArticleId})`
@@ -689,8 +743,16 @@ router.post("/:id/resolve", verifyJwt, async (req: Request, res: Response) => {
       return { updated: u, outboxId };
     });
     dispatchInBackground(outboxId);
+    // Fase T: aviso push al solicitante (además del correo): debe revisar y
+    // aceptar o rechazar la solución desde "Mis tickets".
+    dispatchPushInBackground([ticket.userId], {
+      title: `Ticket ${updated.number}: solución lista para tu revisión`,
+      body: "Revisa la solución y acéptala o recházala desde Mis tickets.",
+      data: { ticketId: ticket.id, eventType: "TICKET_PENDING_ACCEPTANCE" },
+      deepLink: `/tickets/${ticket.id}`,
+    });
     return res.json({
-      message: "Ticket resuelto correctamente",
+      message: "Solución enviada — pendiente validación del solicitante",
       ticket: {
         id: updated.id,
         number: updated.number,
@@ -706,6 +768,238 @@ router.post("/:id/resolve", verifyJwt, async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[resolve] error:", err);
     return res.status(500).json({ error: "Error interno al resolver el ticket" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Sprint I · P4 — Validación del usuario solicitante.
+// POST /tickets/:id/user-accept
+//   Solo el propietario del ticket (userId === req.user.userId).
+//   Requiere status = pendiente_validacion.
+//   Efecto (Fase R): status → CERRADO (estado final del ciclo). El evento
+//   USER_ACCEPTED registra pendiente_validacion → cerrado; los RESOLVED previos
+//   se conservan. Los tickets antiguos que quedaron en `resuelto` (antes de la
+//   Fase R) se mantienen tal cual: `resuelto` = estado final heredado.
+//
+// POST /tickets/:id/user-reject { reason (>=5), description? }
+//   Solo el propietario.
+//   Requiere status = pendiente_validacion.
+//   Efecto: status → en_proceso, ticket vuelve al mismo técnico que resolvió
+//   (assignedTechnicianId ya lo tiene). Historial preserva RESOLVED + REJECTED.
+// ---------------------------------------------------------------------------
+// Fase T — términos vigentes de la aceptación digital (cualquier usuario autenticado).
+router.get("/acceptance-terms", verifyJwt, (_req: Request, res: Response) => {
+  const t = currentTerms();
+  return res.json({ version: t.version, title: t.title, text: t.text, sha256: t.sha256, available: isTermsReady() });
+});
+
+// Fase T — constancias de un ticket (quien puede ver el ticket puede ver sus decisiones).
+router.get("/:id/acceptances", verifyJwt, async (req: Request, res: Response) => {
+  const ticket = await prisma.ticket.findUnique({ where: { id: req.params.id } });
+  if (!ticket) return res.status(404).json({ error: "Ticket no encontrado" });
+  if (!ticketAccess(req.user!, ticket).allowed) {
+    return res.status(403).json({ error: "No tienes permisos sobre este ticket" });
+  }
+  const rows = await prisma.solutionAcceptance.findMany({ where: { ticketId: ticket.id } });
+  return res.json({ ticketId: ticket.id, validation: digitalValidation(ticket, rows) });
+});
+
+// Fase T — la casilla de términos es obligatoria en ambas decisiones; el motivo
+// es obligatorio además al rechazar (la casilla no lo sustituye).
+const termsAckSchema = {
+  termsAccepted: z.literal(true, {
+    errorMap: () => ({ message: "Debes marcar la casilla de aceptación de los términos" }),
+  }),
+  termsVersion: z.string().min(1, "Falta la versión de los términos"),
+};
+const userAcceptSchema = z.object(termsAckSchema);
+
+class DecisionConflict extends Error {}
+
+/** Comprobaciones comunes a aceptar y rechazar. Devuelve el ticket o envía el error. */
+async function loadDecidableTicket(req: Request, res: Response, verb: "aceptar" | "rechazar") {
+  if (!isTermsReady()) {
+    res.status(503).json({ error: "La aceptación digital no está disponible en este momento (términos no publicados)" });
+    return null;
+  }
+  const ticket = await prisma.ticket.findUnique({ where: { id: req.params.id } });
+  if (!ticket) {
+    res.status(404).json({ error: "Ticket no encontrado" });
+    return null;
+  }
+  // Solo el solicitante propietario y autenticado. Nadie (técnico, DTIC ni
+  // admin) puede decidir en su nombre.
+  if (ticket.userId.toLowerCase() !== req.user!.userId.toLowerCase()) {
+    res.status(403).json({ error: `Solo el solicitante puede ${verb} la solución` });
+    return null;
+  }
+  if (ticket.status !== TicketStatus.pendiente_validacion) {
+    res.status(409).json({ error: `El ticket está ${ticket.status} y no admite validación` });
+    return null;
+  }
+  if (req.body?.termsVersion !== currentTerms().version) {
+    res.status(409).json({ error: "Los términos han cambiado: recarga la página y revísalos de nuevo", currentVersion: currentTerms().version });
+    return null;
+  }
+  return ticket;
+}
+
+// ---------------------------------------------------------------------------
+// POST /tickets/:id/user-accept { termsAccepted: true, termsVersion }
+//   Solo el propietario; status = pendiente_validacion. Crea la constancia
+//   ACCEPTED (inmutable) y cierra el ticket (Fase R: → cerrado).
+// POST /tickets/:id/user-reject { termsAccepted: true, termsVersion, reason (≥5), description? }
+//   Crea la constancia REJECTED con el motivo, el ticket vuelve a en_proceso con
+//   el mismo técnico y se le notifica. El ciclo resolver/validar puede repetirse:
+//   cada decisión es un registro nuevo; ninguno se sobrescribe.
+// ---------------------------------------------------------------------------
+router.post("/:id/user-accept", verifyJwt, async (req: Request, res: Response) => {
+  const parsed = userAcceptSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos", details: parsed.error.issues });
+  }
+  const ticket = await loadDecidableTicket(req, res, "aceptar");
+  if (!ticket) return;
+  const terms = currentTerms();
+  try {
+    const { updated, acceptance } = await prisma.$transaction(async (tx) => {
+      // Cambio de estado condicionado: dos peticiones simultáneas no pueden
+      // crear dos constancias para la misma solución.
+      const changed = await tx.ticket.updateMany({
+        where: { id: ticket.id, status: TicketStatus.pendiente_validacion },
+        data: { status: TicketStatus.cerrado },
+      });
+      if (changed.count !== 1) throw new DecisionConflict();
+      const solution = await currentSolution(tx, ticket.id, ticket.resolutionSummary);
+      const acceptance = await tx.solutionAcceptance.create({
+        data: {
+          code: acceptanceCode(),
+          ticketId: ticket.id,
+          decision: AcceptanceDecision.ACCEPTED,
+          userId: req.user!.userId,
+          userName: req.user!.name,
+          userEmail: req.user!.email,
+          userRole: req.user!.role,
+          termsVersion: terms.version,
+          termsSha256: terms.sha256,
+          solutionEventId: solution.eventId,
+          solutionSummary: solution.summary,
+          technicianId: ticket.resolvedById ?? ticket.assignedTechnicianId,
+          technicianName: ticket.resolvedByName ?? ticket.assignedTechnicianName,
+        },
+      });
+      await recordTicketEvent(tx, {
+        ticketId: ticket.id,
+        action: "USER_ACCEPTED",
+        title: `Solicitante aceptó la solución — constancia ${acceptance.code}`,
+        previousStatus: ticket.status,
+        newStatus: TicketStatus.cerrado,
+        description: `Aceptación digital ${acceptance.code} · términos v${terms.version}`,
+        visibility: EventVisibility.public,
+        performedBy: req.user!.userId,
+        performedByName: req.user!.name,
+      });
+      const updated = await tx.ticket.findUniqueOrThrow({ where: { id: ticket.id } });
+      return { updated, acceptance };
+    });
+    return res.json({
+      message: "Solución aceptada. Ticket cerrado.",
+      ticket: { id: updated.id, number: updated.number, status: updated.status },
+      acceptance: serializeAcceptance(acceptance),
+    });
+  } catch (err) {
+    if (err instanceof DecisionConflict) {
+      return res.status(409).json({ error: "El ticket ya fue validado" });
+    }
+    console.error("[user-accept] error:", err);
+    return res.status(500).json({ error: "Error interno al aceptar la solución" });
+  }
+});
+
+const userRejectSchema = z.object({
+  ...termsAckSchema,
+  reason: z
+    .string({ required_error: "Debes indicar por qué rechazas la solución" })
+    .transform((s) => s.trim())
+    .refine((s) => s.length >= 5, {
+      message: "Debes indicar por qué la solución no te sirvió (mínimo 5 caracteres)",
+    }),
+  description: z.string().trim().max(1000).optional(),
+});
+router.post("/:id/user-reject", verifyJwt, async (req: Request, res: Response) => {
+  const parsed = userRejectSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos", details: parsed.error.issues });
+  }
+  const { reason, description } = parsed.data;
+  const ticket = await loadDecidableTicket(req, res, "rechazar");
+  if (!ticket) return;
+  const terms = currentTerms();
+  try {
+    const { updated, acceptance } = await prisma.$transaction(async (tx) => {
+      // El ticket vuelve al mismo técnico que resolvió (política actual).
+      const changed = await tx.ticket.updateMany({
+        where: { id: ticket.id, status: TicketStatus.pendiente_validacion },
+        data: { status: TicketStatus.en_proceso, resolvedAt: null },
+      });
+      if (changed.count !== 1) throw new DecisionConflict();
+      const solution = await currentSolution(tx, ticket.id, ticket.resolutionSummary);
+      const acceptance = await tx.solutionAcceptance.create({
+        data: {
+          code: acceptanceCode(),
+          ticketId: ticket.id,
+          decision: AcceptanceDecision.REJECTED,
+          userId: req.user!.userId,
+          userName: req.user!.name,
+          userEmail: req.user!.email,
+          userRole: req.user!.role,
+          termsVersion: terms.version,
+          termsSha256: terms.sha256,
+          solutionEventId: solution.eventId,
+          solutionSummary: solution.summary,
+          technicianId: ticket.resolvedById ?? ticket.assignedTechnicianId,
+          technicianName: ticket.resolvedByName ?? ticket.assignedTechnicianName,
+          reason,
+        },
+      });
+      await recordTicketEvent(tx, {
+        ticketId: ticket.id,
+        action: "USER_REJECTED_RESOLUTION",
+        title: `Solicitante rechazó la solución — constancia ${acceptance.code}`,
+        previousStatus: ticket.status,
+        newStatus: TicketStatus.en_proceso,
+        reason,
+        description: description ?? null,
+        visibility: EventVisibility.public,
+        performedBy: req.user!.userId,
+        performedByName: req.user!.name,
+      });
+      const updated = await tx.ticket.findUniqueOrThrow({ where: { id: ticket.id } });
+      return { updated, acceptance };
+    });
+    // Notificación push al técnico responsable (best-effort).
+    if (ticket.assignedTechnicianId) {
+      dispatchPushInBackground([ticket.assignedTechnicianId], {
+        title: `Ticket ${ticket.number} rechazado por el solicitante`,
+        body: `Motivo: ${reason.slice(0, 80)}`,
+        data: {
+          ticketId: ticket.id,
+          eventType: "TICKET_USER_REJECTED",
+        },
+        deepLink: `/tickets/${ticket.id}`,
+      });
+    }
+    return res.json({
+      message: "Solución rechazada. El ticket vuelve a proceso.",
+      ticket: { id: updated.id, number: updated.number, status: updated.status },
+      acceptance: serializeAcceptance(acceptance),
+    });
+  } catch (err) {
+    if (err instanceof DecisionConflict) {
+      return res.status(409).json({ error: "El ticket ya fue validado" });
+    }
+    console.error("[user-reject] error:", err);
+    return res.status(500).json({ error: "Error interno al rechazar la solución" });
   }
 });
 

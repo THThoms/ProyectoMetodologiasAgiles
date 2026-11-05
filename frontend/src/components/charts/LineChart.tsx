@@ -2,6 +2,7 @@
 // puntos) como "tickets creados por día (últimos 30 días)".
 
 import { useMemo } from "react";
+import { UTA_CHART_BLUE, yTicks } from "./chartMath";
 
 export interface LinePoint {
   date: string; // YYYY-MM-DD
@@ -18,7 +19,7 @@ interface Props {
 export default function LineChart({
   title,
   data,
-  color = "#9c1f2c",
+  color = UTA_CHART_BLUE,
   height = 220,
 }: Props) {
   const points = data;
@@ -73,13 +74,13 @@ export default function LineChart({
             </linearGradient>
           </defs>
 
-          {[0, 0.25, 0.5, 0.75, 1].map((p) => {
-            const y = padY + innerH * (1 - p);
+          {yTicks(maxValue).map(({ value, fraction }) => {
+            const y = padY + innerH * (1 - fraction);
             return (
-              <g key={p}>
+              <g key={value}>
                 <line x1={padX} x2={W - padX} y1={y} y2={y} stroke="#f1f5f9" />
                 <text x={padX - 6} y={y + 3} textAnchor="end" fontSize={9} fill="#94a3b8">
-                  {Math.round(maxValue * p)}
+                  {value}
                 </text>
               </g>
             );

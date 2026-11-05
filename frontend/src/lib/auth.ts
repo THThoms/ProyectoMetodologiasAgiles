@@ -1,6 +1,18 @@
 import { jwtDecode } from "jwt-decode";
 
-export type Role = "admin" | "tech_n1" | "tech_n2" | "tech_n3" | "tech_n4" | "user";
+// Fase R — roles oficiales. DTIC es un área técnica, NO administración.
+export type Role = "admin" | "technician" | "dtic" | "user";
+const LEGACY_ROLES: Record<string, Role> = {
+  tech_n1: "technician",
+  tech_n2: "technician",
+  tech_n3: "dtic",
+  tech_n4: "dtic",
+};
+/** Normaliza roles heredados de JWT antiguos; un valor desconocido → user. */
+export function normalizeRole(role: string | null | undefined): Role {
+  if (role === "admin" || role === "technician" || role === "dtic" || role === "user") return role;
+  return (role && LEGACY_ROLES[role]) || "user";
+}
 export type AuthProvider = "local" | "microsoft" | "microsoft-simulated";
 
 export interface AuthUser {
@@ -10,6 +22,8 @@ export interface AuthUser {
   role: Role;
   authProvider?: AuthProvider;
   exp?: number;
+  /** Fase R: la cuenta debe cambiar su contraseña temporal antes de continuar. */
+  pwdChange?: boolean;
 }
 
 const TOKEN_KEY = "sd_token";
@@ -39,7 +53,8 @@ export function clearToken(): void {
 // Solo lo usamos para pintar el nombre/rol en la UI y elegir el dashboard inicial.
 export function decodeToken(token: string): AuthUser | null {
   try {
-    return jwtDecode<AuthUser>(token);
+    const user = jwtDecode<AuthUser>(token);
+    return { ...user, role: normalizeRole(user.role) };
   } catch {
     return null;
   }
@@ -63,28 +78,38 @@ export function isAuthenticated(): boolean {
   return getCurrentUser() !== null;
 }
 
-// Sprint 2 (rev): admin va a estadísticas, técnicos al panel con bandejas,
-// usuarios normales a "Mis Tickets" (donde ven historial + crear).
-export function landingRouteFor(role: Role): string {
-  if (role === "admin") return "/admin/stats";
-  if (role === "tech_n1" || role === "tech_n2" || role === "tech_n3" || role === "tech_n4") {
-    return "/panel";
-  }
+// admin → estadísticas; technician/dtic → panel; usuario → "Mis Tickets".
+export function landingRouteFor(role: Role | string): string {
+  const r = normalizeRole(role);
+  if (r === "admin") return "/admin/stats";
+  if (r === "technician" || r === "dtic") return "/panel";
   return "/mis-tickets";
 }
 
-// Devuelve el nivel técnico (N1..N4) del rol; null si no aplica.
-export function levelOfRole(role: Role): "N1" | "N2" | "N3" | "N4" | null {
-  switch (role) {
-    case "tech_n1": return "N1";
-    case "tech_n2": return "N2";
-    case "tech_n3": return "N3";
-    case "tech_n4": return "N4";
+/** True si el rol puede acceder al Panel Técnico. */
+export function isStaffRole(role: Role | string): boolean {
+  const r = normalizeRole(role);
+  return r === "admin" || r === "technician" || r === "dtic";
+}
+
+/** Etiqueta visible del rol (nunca niveles ni nombres internos). */
+export function roleLabel(role: Role | string): string {
+  switch (normalizeRole(role)) {
+    case "admin": return "Administrador";
+    case "technician": return "Técnico";
+    case "dtic": return "DTIC";
+    default: return "Solicitante";
+  }
+}
+
+/** Área operativa del rol, para mostrar en la interfaz. */
+export function areaLabelForRole(role: Role | string): string | null {
+  switch (normalizeRole(role)) {
+    case "technician": return "Técnicos";
+    case "dtic": return "DTIC";
+    case "admin": return "Técnicos y DTIC";
     default: return null;
   }
 }
 
-// True si el rol puede acceder al Panel Técnico (HU-07).
-export function isStaffRole(role: Role): boolean {
-  return role === "admin" || levelOfRole(role) !== null;
-}
+export const STAFF_ROLES: Role[] = ["admin", "technician", "dtic"];

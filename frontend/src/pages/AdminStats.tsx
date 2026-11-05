@@ -4,9 +4,10 @@
 // /api/admin/technicians (no se pide UUID al admin).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { roleLabel } from "../lib/auth";
 import { Link } from "react-router-dom";
 import { Layout } from "../components/Layout";
-import { api, extractApiError } from "../lib/api";
+import { api, extractApiError, isCancelled } from "../lib/api";
 import DonutChart, { DonutSlice } from "../components/charts/DonutChart";
 import BarChart from "../components/charts/BarChart";
 import LineChart from "../components/charts/LineChart";
@@ -115,10 +116,20 @@ const AREA_COLORS: Record<string, string> = {
   DTIC: "#0ea5e9",
 };
 
+// Fase R — Personal técnico por ÁREA (Técnicos / DTIC). Sustituye al antiguo
+// "bloque" nivel·área: no existen bloques físicos ni niveles N1–N4.
+interface TechnicianSummary {
+  total: number;
+  active: number;
+  inactive: number;
+  byArea: Array<{ area: string; role: string; label: string; count: number }>;
+}
+
 export default function AdminStats() {
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [tickets, setTickets] = useState<UnassignedTicket[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [techSummary, setTechSummary] = useState<TechnicianSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -134,7 +145,10 @@ export default function AdminStats() {
 
   const rangeInvalid = Boolean(dateFrom && dateTo && dateFrom > dateTo);
 
-  const load = useCallback(async (from: string, to: string) => {
+  // Sprint E: AbortController para cancelar los 3 fetches paralelos si el
+  // admin cambia de vista antes de que respondan. Sin esto, al navegar rápido
+  // los fetches saturan las 6 conexiones concurrentes del navegador.
+  const load = useCallback(async (from: string, to: string, signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
@@ -143,25 +157,30 @@ export default function AdminStats() {
       if (to) params.set("dateTo", to);
       const qs = params.toString();
       const statsUrl = qs ? `/api/admin/stats/tickets?${qs}` : "/api/admin/stats/tickets";
-      const [s, t, te] = await Promise.all([
-        api.get<StatsResponse>(statsUrl),
-        api.get<{ tickets: UnassignedTicket[]; areas: string[] }>("/api/tickets/available"),
-        api.get<{ technicians: Technician[] }>("/api/admin/technicians"),
+      const [s, t, te, sum] = await Promise.all([
+        api.get<StatsResponse>(statsUrl, { signal }),
+        api.get<{ tickets: UnassignedTicket[]; areas: string[] }>("/api/tickets/available", { signal }),
+        api.get<{ technicians: Technician[] }>("/api/admin/technicians", { signal }),
+        api.get<TechnicianSummary>("/api/admin/technicians/summary", { signal }),
       ]);
       setStats(s.data);
       setTickets(t.data.tickets);
       setTechnicians(te.data.technicians);
+      setTechSummary(sum.data);
       setAppliedFrom(from);
       setAppliedTo(to);
     } catch (err) {
+      if (isCancelled(err)) return;
       setError(extractApiError(err));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load("", "");
+    const ctrl = new AbortController();
+    load("", "", ctrl.signal);
+    return () => ctrl.abort();
   }, [load]);
 
   function applyFilters() {
@@ -503,6 +522,77 @@ export default function AdminStats() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Fase R — Personal técnico por área (Técnicos / DTIC). */}
+        {techSummary && (
+          <div className="card mt-6">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                  Personal técnico por área
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Cuentas activas con rol Técnico (área Técnicos) o DTIC (área DTIC).
+                  Los administradores no se cuentan aquí.
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-bold text-uta-900">{techSummary.active}</p>
+                <p className="text-xs uppercase tracking-wide text-gray-500">
+                  Técnicos activos
+                  {techSummary.inactive > 0 && (
+                    <span className="ml-1 text-gray-400">
+                      (+{techSummary.inactive} inactivos)
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            {techSummary.active === 0 ? (
+              <p className="py-4 text-center text-sm text-gray-500">
+                No hay técnicos activos registrados.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead>
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">
+                        Área
+                      </th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">
+                        Rol
+                      </th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase text-gray-500">
+                        Técnicos
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {techSummary.byArea.map((b) => (
+                      <tr key={b.area}>
+                        <td className="px-3 py-2 text-sm font-semibold text-uta-900">
+                          {b.label}
+                        </td>
+                        <td className="px-3 py-2 text-sm text-gray-700">{roleLabel(b.role)}</td>
+                        <td className="px-3 py-2 text-right text-sm font-bold text-uta-900">
+                          {b.count}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="bg-gray-50">
+                      <td className="px-3 py-2 text-sm font-semibold text-gray-700">Total</td>
+                      <td className="px-3 py-2 text-sm text-gray-500">—</td>
+                      <td className="px-3 py-2 text-right text-sm font-bold text-uta-900">
+                        {techSummary.active}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 

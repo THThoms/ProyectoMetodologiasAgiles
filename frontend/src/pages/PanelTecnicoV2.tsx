@@ -6,7 +6,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Layout } from "../components/Layout";
-import { api, extractApiError } from "../lib/api";
+import TicketHistoryModal from "../components/TicketHistoryModal";
+import { api, extractApiError, isCancelled } from "../lib/api";
 import { getCurrentUser } from "../lib/auth";
 import {
   getAccountNameLabel,
@@ -63,23 +64,34 @@ export default function PanelTecnicoV2() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [historyTicket, setHistoryTicket] = useState<Ticket | null>(null);
 
-  const load = useCallback(async () => {
+  // Sprint E (frontend hardening): las cargas usan AbortController para que al
+  // desmontar el componente (navegación rápida entre paneles) las requests en
+  // vuelo se cancelen; sin esto el navegador satura sus 6 conexiones por
+  // origen y aparenta congelarse.
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     setError(null);
     try {
-      const r = await api.get<{ tickets: Ticket[]; areas: ResponsibleAreaRef[] }>("/api/tickets/available");
+      const r = await api.get<{ tickets: Ticket[]; areas: ResponsibleAreaRef[] }>(
+        "/api/tickets/available",
+        { signal }
+      );
       setAvailable(r.data.tickets);
       setAreas(r.data.areas ?? []);
     } catch (err) {
+      if (isCancelled(err)) return; // request abortada al desmontar — silencio.
       setError(extractApiError(err));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
+    const ctrl = new AbortController();
+    load(ctrl.signal);
+    return () => ctrl.abort();
   }, [load]);
 
   async function acceptTicket(t: Ticket) {
@@ -163,7 +175,19 @@ export default function PanelTecnicoV2() {
                   const s = STATUS_BADGE[t.status] ?? { label: t.status, classes: "bg-gray-100 text-gray-700" };
                   const p = PRIORITY_BADGE[t.priority] ?? { label: t.priority, classes: "bg-gray-100 text-gray-700" };
                   return (
-                    <tr key={t.id} className="hover:bg-gray-50">
+                    <tr
+                      key={t.id}
+                      className="cursor-pointer hover:bg-gray-50"
+                      onClick={() => setHistoryTicket(t)}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setHistoryTicket(t);
+                        }
+                      }}
+                      aria-label={`Abrir detalle del ticket ${t.number}`}
+                    >
                       <td className="whitespace-nowrap px-4 py-3 font-mono font-semibold text-uta-900">{t.number}</td>
                       <td className="px-4 py-3 text-gray-700 truncate max-w-[180px]" title={t.userEmail ?? ""}>
                         {t.userName ? getTechnicianNameLabel(t.userName) : "—"}
@@ -183,16 +207,34 @@ export default function PanelTecnicoV2() {
                       <td className="whitespace-nowrap px-4 py-3 text-xs text-gray-500">
                         {formatDate(t.createdAt)}
                       </td>
-                      <td className="whitespace-nowrap px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => acceptTicket(t)}
-                          disabled={isAdmin}
-                          title={isAdmin ? "El admin debe usar la asignación manual" : "Aceptar ticket"}
-                          className="rounded bg-uta-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-uta-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-                        >
-                          Aceptar
-                        </button>
+                      <td
+                        className="whitespace-nowrap px-4 py-3"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setHistoryTicket(t);
+                            }}
+                            className="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                          >
+                            Ver detalle
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              acceptTicket(t);
+                            }}
+                            disabled={isAdmin}
+                            title={isAdmin ? "El admin debe usar la asignación manual" : "Aceptar ticket"}
+                            className="rounded bg-uta-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-uta-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                          >
+                            Aceptar
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -200,6 +242,18 @@ export default function PanelTecnicoV2() {
               </tbody>
             </table>
           </div>
+        )}
+
+        {historyTicket && (
+          <TicketHistoryModal
+            ticket={{
+              id: historyTicket.id,
+              number: historyTicket.number,
+              serviceName: historyTicket.serviceName,
+            }}
+            audience="staff"
+            onClose={() => setHistoryTicket(null)}
+          />
         )}
       </div>
     </Layout>
