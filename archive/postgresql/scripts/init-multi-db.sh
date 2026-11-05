@@ -1,9 +1,16 @@
 #!/bin/bash
 # =============================================================================
+# ⛔ LEGACY — NO EJECUTAR
+# PostgreSQL fue retirado del runtime en Fase N (2026-09-15). Este script
+# solo tiene sentido si se reconstruye un contenedor postgres antiguo para
+# leer los dumps `postgresql-final-retired/*.custom.dump`. En producción y
+# desarrollo actuales el runtime es SQL Server (docker-compose.mssql.yml
+# y docker-compose.prod-mssql.yml). Ver docs/mssql/POSTGRESQL_RETIRADO.md.
+# =============================================================================
 # Inicializa 3 bases aisladas en una sola instancia de Postgres,
-# cada una con su propio usuario (principio de privilegio mÃ­nimo).
-# Se ejecuta UNA sola vez al levantar el contenedor postgres por primera vez
-# (se monta en /docker-entrypoint-initdb.d/).
+# cada una con su propio usuario (principio de privilegio mínimo).
+# Se ejecutaba UNA sola vez al levantar el contenedor postgres por primera
+# vez (se montaba en /docker-entrypoint-initdb.d/).
 # =============================================================================
 set -e
 

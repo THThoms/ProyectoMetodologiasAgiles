@@ -8,11 +8,24 @@ build/
 **/dist/
 **/build/
 
-# Environment
+# Environment — TODOS los archivos .env reales quedan fuera de Git
+# (.env, .env.mssql, .env.uta, deploy/server/.env, …). Solo se versiona la plantilla.
 .env
-.env.local
-.env.*.local
+.env.*
+**/.env
+**/.env.*
 !.env.example
+!**/.env.example
+
+# Paquetes de instalación generados por scripts/build-server-package.sh
+release/
+
+# Secretos de servicio (Firebase service account, certificados, claves)
+**/*service-account*.json
+**/*.pem
+**/*.key
+**/*.crt
+**/*.pfx
 
 # Logs
 logs/
@@ -38,6 +51,25 @@ Thumbs.db
 coverage/
 **/coverage/
 
+# Sprint 4+ · Android + Firebase (Capacitor)
+# NUNCA commitear google-services.json (contiene identificadores del proyecto FCM).
+**/google-services.json
+# Artefactos de Android Studio y Gradle
+**/android/.gradle/
+**/android/.idea/
+**/android/local.properties
+**/android/build/
+**/android/app/build/
+**/android/**/*.iml
+**/android/app/release/
+**/android/app/debug/
+# Assets copiados por `cap sync` — se regeneran, no versionar
+**/android/app/src/main/assets/public/
+**/android/app/src/main/assets/capacitor.config.json
+# Keystores de release nunca deben subirse al repo
+**/*.keystore
+**/*.jks
+
 # TypeScript incremental build cache (no debe versionarse)
 **/tsconfig.tsbuildinfo
 
@@ -55,3 +87,9 @@ backups/
 # Misc
 *.crdownload
 SCRUM_ServiceDesk_2Sprints*.docx
+
+# Fase S — backups cifrados: claves y credenciales NUNCA en Git
+*.pass
+backup.env
+!deploy/backup/backup.env.example
+backups/
