@@ -1,7 +1,7 @@
 # =============================================================================
 # api-gateway - Multi-stage build
 # =============================================================================
-FROM node:20-alpine AS builder
+FROM node:22.23.4-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
@@ -12,7 +12,7 @@ COPY src ./src
 RUN npm run build
 
 # -----------------------------------------------------------------------------
-FROM node:20-alpine AS runner
+FROM node:22.23.4-alpine AS runner
 WORKDIR /app
 
 RUN apk add --no-cache wget

@@ -1,10 +1,15 @@
 import { prisma } from "../db/client";
-import { Role } from "@prisma/client";
-import { signAuthToken, getExpiresAt } from "../utils/jwt";
+// Sprint B: Role migrado a `src/domain/enums.ts` para portabilidad MSSQL/PG.
+import { Role, normalizeRole } from "../domain/enums";
+import { signAuthToken, getExpiresAt, hashToken } from "../utils/jwt";
 import { env } from "../config/env";
 // HU-13: la política, el hashing y la verificación de contraseñas viven en un
 // helper único reutilizable (passwordSecurity). Aquí solo se orquesta el login.
-import { hashPassword, verifyPassword } from "../utils/passwordSecurity";
+import { hashPassword, verifyPassword, validatePasswordPolicy } from "../utils/passwordSecurity";
+
+// Hash bcrypt fijo usado SOLO para igualar el tiempo de respuesta cuando la
+// cuenta no existe o no tiene contraseña local (evita enumerar cuentas por tiempo).
+const DUMMY_BCRYPT_HASH = hashPassword("servicedesk-timing-equalizer-" + Date.now());
 
 export interface MicrosoftClaims {
   oid?: string;
@@ -42,20 +47,22 @@ function isAdminEmail(email: string): boolean {
   return env.adminEmails.includes(email.toLowerCase());
 }
 
-const MICROSOFT_ACCOUNT_PROFILES: Record<string, { name: string; role: Role }> = {
-  "bparedes8678@uta.edu.ec": { name: "Belén Paredes", role: Role.user },
-  // tech_n1 atiende el área TECHNICIANS en ticket-service/areaService.
-  "mgarcia7795@uta.edu.ec": { name: "Manolo García", role: Role.tech_n1 },
-};
-
-function microsoftProfileForEmail(email: string): { name: string; role: Role } | undefined {
-  return MICROSOFT_ACCOUNT_PROFILES[email.toLowerCase()];
-}
-
-// Provisión automática: si el usuario no existe en la BD local, lo crea con su rol.
-// Los correos listados en ADMIN_EMAILS reciben siempre rol admin (incluso si ya
-// existían con otro rol). Las cuentas Microsoft conocidas reciben el rol
-// preaprobado por correo; el resto se crea como `user` y se puede promover desde /admin.
+// Sprint 3+ — Provisión desde SSO Microsoft.
+//
+// Regla clave: el ROL vive en la BD y es fuente única de verdad.
+//   · Alta (usuario aún no existe en auth_db):
+//       - Si está en ADMIN_EMAILS → role = admin.
+//       - En caso contrario       → role = user.
+//     La promoción posterior a tech_n* se hace por SQL/administración directa
+//     sobre auth_db (se puede exponer un endpoint admin cuando se necesite).
+//   · Login de usuario existente:
+//       - Solo se refrescan `microsoftId` y `name` (según claims de Azure).
+//       - El rol NO se sobreescribe nunca en cada login, para respetar los
+//         cambios administrativos.
+//
+// Ya no existe mapping correo→rol en código: ni Belén Paredes ni Manolo
+// García ni ningún otro correo específico se resuelve aquí. Los seeds pueden
+// crear usuarios iniciales, pero el runtime lee siempre de la BD.
 export async function upsertUserFromMicrosoft(claims: MicrosoftClaims) {
   const email = extractEmail(claims);
   if (!email) {
@@ -66,23 +73,35 @@ export async function upsertUserFromMicrosoft(claims: MicrosoftClaims) {
   }
 
   const normalizedEmail = email.toLowerCase();
-  const shouldBeAdmin = isAdminEmail(normalizedEmail);
-  const microsoftProfile = microsoftProfileForEmail(normalizedEmail);
-  const resolvedRole = shouldBeAdmin ? Role.admin : microsoftProfile?.role ?? Role.user;
-  const resolvedName = microsoftProfile?.name ?? claims.name ?? email;
 
-  return prisma.user.upsert({
-    where: { email: normalizedEmail },
-    update: {
-      microsoftId: claims.oid,
-      name: resolvedName,
-      role: resolvedRole,
-    },
-    create: {
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+
+  // Nombre a mostrar: preferimos el claim actual de Azure (por si el usuario
+  // cambió su nombre en el tenant), y como fallback lo que ya había en BD.
+  const displayName = claims.name ?? existing?.name ?? email;
+
+  if (existing) {
+    // Usuario ya conocido: solo refrescamos identidad Microsoft y nombre.
+    // El rol y demás campos sensibles permanecen tal como los tenga la BD.
+    return prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        name: displayName,
+        ...(claims.oid ? { microsoftId: claims.oid } : {}),
+      },
+    });
+  }
+
+  // Primer login: aplicamos el rol de bootstrap. Solo aquí ADMIN_EMAILS
+  // decide el rol inicial; después ya es responsabilidad del administrador.
+  const bootstrapRole = isAdminEmail(normalizedEmail) ? Role.admin : Role.user;
+
+  return prisma.user.create({
+    data: {
       email: normalizedEmail,
-      name: resolvedName,
-      microsoftId: claims.oid,
-      role: resolvedRole,
+      name: displayName,
+      microsoftId: claims.oid ?? null,
+      role: bootstrapRole,
     },
   });
 }
@@ -99,6 +118,7 @@ export async function loginWithPassword(email: string, password: string) {
 
   const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (!user || !user.passwordHash) {
+    verifyPassword(password, DUMMY_BCRYPT_HASH); // mismo coste que un intento real
     throw new InvalidCredentialsError();
   }
 
@@ -119,8 +139,11 @@ export async function loginWithPassword(email: string, password: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Login simulado Microsoft Office 365
-// Devuelve un usuario de la BD según el email. Si no existe, lo crea como "user".
+// Login simulado Microsoft (solo desarrollo, deshabilitado en producción por
+// AUTH_DEV_LOGIN=false). Aplica las mismas reglas que el flujo real:
+//   · Usuario existe → se conserva su rol de BD.
+//   · Usuario no existe → rol inicial = admin si ADMIN_EMAILS lo incluye, si
+//     no user. La promoción a técnico se hace desde administración.
 // ---------------------------------------------------------------------------
 export async function microsoftSimulatedLogin(email?: string) {
   const normalizedEmail = (email ?? "docente@uta.edu.ec").toLowerCase().trim();
@@ -129,27 +152,27 @@ export async function microsoftSimulatedLogin(email?: string) {
     throw new DomainNotAllowedError(normalizedEmail);
   }
 
-  const shouldBeAdmin = isAdminEmail(normalizedEmail);
-  const microsoftProfile = microsoftProfileForEmail(normalizedEmail);
-  const resolvedRole = shouldBeAdmin ? Role.admin : microsoftProfile?.role ?? Role.user;
-  const resolvedName =
-    microsoftProfile?.name ?? normalizedEmail.split("@")[0].replace(".", " ");
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  const displayName =
+    existing?.name ?? normalizedEmail.split("@")[0].replace(/[._-]+/g, " ");
 
-  // Buscar usuario existente o crear uno nuevo
-  const user = await prisma.user.upsert({
-    where: { email: normalizedEmail },
-    update: {
-      name: resolvedName,
-      role: resolvedRole,
-    },
-    create: {
+  if (existing) {
+    // No sobreescribir role.
+    return prisma.user.update({
+      where: { id: existing.id },
+      data: { name: displayName },
+    });
+  }
+
+  const bootstrapRole = isAdminEmail(normalizedEmail) ? Role.admin : Role.user;
+
+  return prisma.user.create({
+    data: {
       email: normalizedEmail,
-      name: resolvedName,
-      role: resolvedRole,
+      name: displayName,
+      role: bootstrapRole,
     },
   });
-
-  return user;
 }
 
 // ---------------------------------------------------------------------------
@@ -162,23 +185,28 @@ export async function issueSession(
     id: string;
     email: string;
     name: string;
-    role: Role;
+    // Sprint B: Prisma-SQLServer tipa `role` como `string` (no genera enums).
+    // Aceptamos `string` en la firma; los llamadores validan/normalizan.
+    role: Role | string;
   },
-  authProvider: AuthProvider = "local"
+  authProvider: AuthProvider = "local",
+  opts: { pwdChange?: boolean } = {}
 ) {
   const token = signAuthToken({
     userId: user.id,
     email: user.email,
     name: user.name,
-    role: user.role,
+    role: normalizeRole(user.role),
     authProvider,
+    ...(opts.pwdChange ? { pwdChange: true } : {}),
   });
   const expiresAt = getExpiresAt(token);
 
+  // Fase R: solo se persiste el SHA-256 del JWT, nunca el token.
   await prisma.session.create({
     data: {
       userId: user.id,
-      token,
+      tokenHash: hashToken(token),
       authProvider,
       expiresAt,
     },
@@ -210,7 +238,47 @@ export async function logAccess(params: {
 
 export async function revokeSession(token: string) {
   await prisma.session.updateMany({
-    where: { token, revokedAt: null },
+    where: { tokenHash: hashToken(token), revokedAt: null },
     data: { revokedAt: new Date() },
   });
+}
+
+/** Revoca TODAS las sesiones activas de un usuario (cambio de contraseña, reset). */
+export async function revokeAllSessions(userId: string) {
+  await prisma.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+}
+
+export class PasswordPolicyError extends Error {
+  constructor(public readonly errors: string[]) {
+    super("La nueva contraseña no cumple la política");
+    this.name = "PasswordPolicyError";
+  }
+}
+
+/**
+ * Fase R — Cambio de contraseña (obligatorio tras bootstrap/reset).
+ * Verifica la actual, aplica la política (≥12 en producción), impide reutilizar
+ * la misma, guarda solo el hash bcrypt, quita mustChangePassword y revoca
+ * todas las sesiones previas del usuario.
+ */
+export async function changePassword(userId: string, currentPassword: string, newPassword: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || !user.passwordHash) throw new InvalidCredentialsError();
+  if (!verifyPassword(currentPassword, user.passwordHash).ok) throw new InvalidCredentialsError();
+
+  const policy = validatePasswordPolicy(newPassword, user.email);
+  const errors = [...policy.errors];
+  if (newPassword.length < 12) errors.push("La contraseña debe tener al menos 12 caracteres.");
+  if (newPassword === currentPassword) errors.push("La nueva contraseña debe ser distinta de la actual.");
+  if (errors.length) throw new PasswordPolicyError([...new Set(errors)]);
+
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash: hashPassword(newPassword), mustChangePassword: false },
+  });
+  await revokeAllSessions(user.id);
+  return updated;
 }

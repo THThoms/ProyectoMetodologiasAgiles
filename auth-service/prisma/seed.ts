@@ -1,5 +1,8 @@
-import { PrismaClient, Role } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+// Sprint B: Role vive en src/domain/enums.ts (Prisma-SQLServer no genera enums).
+// El seed corre con ts-node desde `prisma/`; el path relativo cruza a src/.
+import { Role } from "../src/domain/enums";
 
 const prisma = new PrismaClient();
 
@@ -40,22 +43,43 @@ type MicrosoftSeedUser = {
 const seedUsers: SeedUser[] = [
   { email: "admin@uta.edu.ec",       name: "Administrador UTA",          role: Role.admin,   password: "admin123" },
   { email: "msolis5357@uta.edu.ec",  name: "Tomás Solís (Admin)",        role: Role.admin,   password: "msolis123" },
-  { email: "carlos.mena@uta.edu.ec",     name: "Carlos Mena",     role: Role.tech_n1, password: "tecn1123", legacyEmails: ["tecn1@uta.edu.ec"] },
-  { email: "daniela.paredes@uta.edu.ec", name: "Daniela Paredes", role: Role.tech_n2, password: "tecn2123", legacyEmails: ["tecn2@uta.edu.ec"] },
-  { email: "andres.salazar@uta.edu.ec",  name: "Andrés Salazar",  role: Role.tech_n3, password: "tecn3123", legacyEmails: ["tecn3@uta.edu.ec"] },
-  { email: "valeria.nunez@uta.edu.ec",   name: "Valeria Núñez",   role: Role.tech_n4, password: "tecn4123", legacyEmails: ["tecn4@uta.edu.ec"] },
-  { email: "mateo.cordova@uta.edu.ec",   name: "Mateo Córdova",   role: Role.tech_n3, password: "tecn5123", legacyEmails: ["tecn5@uta.edu.ec"] },
+  { email: "carlos.mena@uta.edu.ec",     name: "Carlos Mena",     role: Role.technician, password: "tecn1123", legacyEmails: ["tecn1@uta.edu.ec"] },
+  { email: "daniela.paredes@uta.edu.ec", name: "Daniela Paredes", role: Role.technician, password: "tecn2123", legacyEmails: ["tecn2@uta.edu.ec"] },
+  { email: "andres.salazar@uta.edu.ec",  name: "Andrés Salazar",  role: Role.dtic, password: "tecn3123", legacyEmails: ["tecn3@uta.edu.ec"] },
+  { email: "valeria.nunez@uta.edu.ec",   name: "Valeria Núñez",   role: Role.dtic, password: "tecn4123", legacyEmails: ["tecn4@uta.edu.ec"] },
+  { email: "mateo.cordova@uta.edu.ec",   name: "Mateo Córdova",   role: Role.dtic, password: "tecn5123", legacyEmails: ["tecn5@uta.edu.ec"] },
   { email: "docente@uta.edu.ec",     name: "Docente de Prueba",          role: Role.user,    password: "docente123" },
   { email: "estudiante@uta.edu.ec",  name: "Estudiante de Prueba",       role: Role.user,    password: "estudiante123" },
 ];
 
 const microsoftSeedUsers: MicrosoftSeedUser[] = [
   { email: "bparedes8678@uta.edu.ec", name: "Belén Paredes", role: Role.user },
-  // tech_n1 queda autorizado para el área Técnicos (TECHNICIANS) en ticket-service.
-  { email: "mgarcia7795@uta.edu.ec", name: "Manolo García", role: Role.tech_n1 },
+  // technician: área Técnicos (TECHNICIANS) en ticket-service.
+  { email: "mgarcia7795@uta.edu.ec", name: "Manolo García", role: Role.technician },
 ];
 
+// =============================================================================
+// Fase P · seguridad — política de siembra de usuarios
+//   · Las cuentas DEMO (contraseñas conocidas, documentadas en el README) solo
+//     se crean si SEED_DEMO_USERS=true **y** NODE_ENV != production.
+//   · En producción el seed NO crea ningún usuario. El administrador inicial
+//     se crea con el bootstrap seguro (Fase R):
+//       scripts/operations/manage-user.sh bootstrap-admin <correo> "<Nombre>"
+//     (contraseña temporal aleatoria, solo hash en BD, cambio obligatorio).
+// =============================================================================
+const isProduction = (process.env.NODE_ENV ?? "development") === "production";
+const seedDemoRequested = (process.env.SEED_DEMO_USERS ?? "false").trim().toLowerCase() === "true";
+
 async function main() {
+  if (!seedDemoRequested || isProduction) {
+    if (seedDemoRequested && isProduction) {
+      console.warn("Seed auth-service: SEED_DEMO_USERS=true IGNORADO porque NODE_ENV=production.");
+    }
+    console.log("Seed auth-service: producción o sin SEED_DEMO_USERS — no se crean usuarios.");
+    return;
+  }
+
+  console.log("Seed auth-service: modo DEMO (SEED_DEMO_USERS=true, NODE_ENV != production).");
   for (const u of seedUsers) {
     let existing = await prisma.user.findUnique({ where: { email: u.email } });
 
@@ -122,7 +146,7 @@ async function main() {
   );
 }
 
-main()
+if (require.main === module) main()
   .catch((e) => {
     console.error(e);
     process.exit(1);

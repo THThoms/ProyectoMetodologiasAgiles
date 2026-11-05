@@ -27,8 +27,13 @@ const ssoConfigured = Boolean(
   azureClientId && azureTenantId && azureClientSecret && azureRedirectUri
 );
 
+const nodeEnv = process.env.NODE_ENV ?? "development";
+const isProduction = nodeEnv === "production";
+const flag = (name: string) => (process.env[name] ?? "false").trim().toLowerCase() === "true";
+
 export const env = {
-  nodeEnv: process.env.NODE_ENV ?? "development",
+  nodeEnv,
+  isProduction,
   port: Number(process.env.PORT ?? 3001),
 
   jwt: {
@@ -46,15 +51,26 @@ export const env = {
     redirectUri: azureRedirectUri ?? "",
   },
 
-  // dev-login: solo se habilita con AUTH_DEV_LOGIN=true (off por defecto en producción real).
-  devLoginEnabled: (process.env.AUTH_DEV_LOGIN ?? "false").toLowerCase() === "true",
+  // Mecanismos de login SIN contraseña (solo desarrollo/laboratorio).
+  // Fase P · seguridad: ambos quedan DESHABILITADOS de forma incondicional
+  // cuando NODE_ENV=production, aunque la variable esté en "true". La
+  // restricción vive en backend (las rutas responden 404), no solo en la UI.
+  //   · AUTH_DEV_LOGIN=true          → POST /auth/dev-login
+  //   · AUTH_MICROSOFT_SIMULATE=true → POST /auth/microsoft-simulate
+  devLoginEnabled: !isProduction && flag("AUTH_DEV_LOGIN"),
+  microsoftSimulateEnabled: !isProduction && flag("AUTH_MICROSOFT_SIMULATE"),
+  // Se registra si alguien intentó activarlos en producción (para log de arranque).
+  insecureLoginRequestedInProduction:
+    isProduction && (flag("AUTH_DEV_LOGIN") || flag("AUTH_MICROSOFT_SIMULATE")),
 
   allowedDomain: process.env.ALLOWED_DOMAIN ?? "uta.edu.ec",
   frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:3000",
 
   // Lista de correos que deben recibir rol "admin" cuando inician sesión
   // por Microsoft (real o simulado). Coma-separados en ADMIN_EMAILS.
-  adminEmails: (process.env.ADMIN_EMAILS ?? "msolis5357@uta.edu.ec,admin@uta.edu.ec")
+  // Fase R: sin correos reales por defecto. Vacío = nadie recibe admin por SSO.
+  trustProxyHops: Math.max(0, Math.min(5, Number(process.env.TRUST_PROXY_HOPS ?? 1) || 0)),
+  adminEmails: (process.env.ADMIN_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter((e) => e.length > 0),

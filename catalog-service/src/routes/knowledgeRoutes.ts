@@ -15,7 +15,9 @@ import { verifyJwt, requireRole } from "../middleware/verifyJwt";
 
 const router = Router();
 
-const STAFF_ROLES = ["admin", "tech_n1", "tech_n2", "tech_n3", "tech_n4"] as const;
+// Fase R: la base de conocimiento es institucional y compartida por todo el
+// personal (admin, technician, dtic); su edición sigue siendo solo de admin.
+const STAFF_ROLES = ["admin", "technician", "dtic"] as const;
 
 // Sprint 3+: la búsqueda por texto es OPCIONAL — se puede filtrar solo por
 // categoría (serviceId) o listar todo activo sin filtros. Si se envía `q`,
@@ -54,6 +56,12 @@ router.get(
     //  - q sin serviceId → texto en todas las categorías
     //  - serviceId sin q → todos los artículos del servicio
     //  - sin ambos       → todos los artículos activos
+    //
+    // Sprint B (adaptación MSSQL):
+    //  · Ya no existe `keywords String[]` — se consulta `KnowledgeKeyword` 1:N.
+    //  · Se elimina `mode: "insensitive"` (no soportado por prisma-sqlserver);
+    //    la case-insensitivity depende de la colación del servidor
+    //    (SQL_Latin1_General_CP1_CI_AS en el lab; PG con `citext` opcional).
     const where: Prisma.KnowledgeArticleWhereInput = { isActive: true };
     const AND: Prisma.KnowledgeArticleWhereInput[] = [];
 
@@ -62,11 +70,11 @@ router.get(
       const lower = q.toLowerCase();
       AND.push({
         OR: [
-          { title: { contains: q, mode: "insensitive" } },
-          { problemDescription: { contains: q, mode: "insensitive" } },
-          { solution: { contains: q, mode: "insensitive" } },
-          { keywords: { hasSome: [lower] } },
-          { service: { name: { contains: q, mode: "insensitive" } } },
+          { title: { contains: q } },
+          { problemDescription: { contains: q } },
+          { solution: { contains: q } },
+          { keywords: { some: { keyword: lower } } },
+          { service: { name: { contains: q } } },
         ],
       });
     }
@@ -81,7 +89,10 @@ router.get(
       prisma.knowledgeArticle.findMany({
         where,
         orderBy: { updatedAt: "desc" },
-        include: { service: { select: { id: true, name: true } } },
+        include: {
+          service: { select: { id: true, name: true } },
+          keywords: { select: { keyword: true } },
+        },
         skip,
         take: effectiveLimit,
       }),
@@ -98,7 +109,7 @@ router.get(
         title: a.title,
         problemDescription: a.problemDescription,
         solution: a.solution,
-        keywords: a.keywords,
+        keywords: a.keywords.map((k) => k.keyword),
         service: a.service ? { id: a.service.id, name: a.service.name } : null,
         updatedAt: a.updatedAt,
         createdAt: a.createdAt,
@@ -125,7 +136,10 @@ router.get(
     }
     const article = await prisma.knowledgeArticle.findUnique({
       where: { id: parsedId.data },
-      include: { service: { select: { id: true, name: true } } },
+      include: {
+        service: { select: { id: true, name: true } },
+        keywords: { select: { keyword: true } },
+      },
     });
     if (!article || !article.isActive) {
       return res.status(404).json({ error: "Artículo no encontrado" });
@@ -136,7 +150,7 @@ router.get(
         title: article.title,
         problemDescription: article.problemDescription,
         solution: article.solution,
-        keywords: article.keywords,
+        keywords: article.keywords.map((k) => k.keyword),
         service: article.service ? { id: article.service.id, name: article.service.name } : null,
         createdAt: article.createdAt,
         updatedAt: article.updatedAt,
@@ -186,16 +200,27 @@ router.post(
       }
     }
 
+    // Normalizar keywords a lowercase + deduplicar (misma semántica que
+    // hacía el schema PG con `String[]`).
+    const normalized = Array.from(
+      new Set(keywords.map((k) => k.toLowerCase()))
+    );
+
     const article = await prisma.knowledgeArticle.create({
       data: {
         title,
         problemDescription,
         solution,
-        keywords: keywords.map((k) => k.toLowerCase()),
         serviceId: serviceId ?? null,
         createdByUserId: req.user!.userId,
+        keywords: {
+          create: normalized.map((k) => ({ keyword: k })),
+        },
       },
-      include: { service: { select: { id: true, name: true } } },
+      include: {
+        service: { select: { id: true, name: true } },
+        keywords: { select: { keyword: true } },
+      },
     });
 
     return res.status(201).json({
@@ -204,7 +229,7 @@ router.post(
         title: article.title,
         problemDescription: article.problemDescription,
         solution: article.solution,
-        keywords: article.keywords,
+        keywords: article.keywords.map((k) => k.keyword),
         service: article.service ? { id: article.service.id, name: article.service.name } : null,
         createdAt: article.createdAt,
         updatedAt: article.updatedAt,
@@ -259,7 +284,10 @@ router.get(
       prisma.knowledgeArticle.findMany({
         where,
         orderBy: { updatedAt: "desc" },
-        include: { service: { select: { id: true, name: true } } },
+        include: {
+          service: { select: { id: true, name: true } },
+          keywords: { select: { keyword: true } },
+        },
         skip: (effectivePage - 1) * effectiveLimit,
         take: effectiveLimit,
       }),
@@ -275,7 +303,7 @@ router.get(
         title: a.title,
         problemDescription: a.problemDescription,
         solution: a.solution,
-        keywords: a.keywords,
+        keywords: a.keywords.map((k) => k.keyword),
         service: a.service ? { id: a.service.id, name: a.service.name } : null,
         isActive: a.isActive,
         updatedAt: a.updatedAt,
@@ -319,21 +347,37 @@ router.put(
     }
 
     try {
-      const article = await prisma.knowledgeArticle.update({
-        where: { id: idParsed.data },
-        data: {
-          ...(data.title !== undefined ? { title: data.title } : {}),
-          ...(data.problemDescription !== undefined
-            ? { problemDescription: data.problemDescription }
-            : {}),
-          ...(data.solution !== undefined ? { solution: data.solution } : {}),
-          ...(data.keywords !== undefined
-            ? { keywords: data.keywords.map((k) => k.toLowerCase()) }
-            : {}),
-          ...(data.serviceId !== undefined ? { serviceId: data.serviceId } : {}),
-          ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
-        },
-        include: { service: { select: { id: true, name: true } } },
+      // Sprint B: si vienen keywords, reemplazamos el set completo dentro de
+      // una transacción — deleteMany + create es la vía portable a MSSQL
+      // (evita depender de operadores tipo `set` sobre `String[]` PG-only).
+      const article = await prisma.$transaction(async (tx) => {
+        if (data.keywords !== undefined) {
+          const normalized = Array.from(
+            new Set(data.keywords.map((k) => k.toLowerCase()))
+          );
+          await tx.knowledgeKeyword.deleteMany({ where: { articleId: idParsed.data } });
+          if (normalized.length > 0) {
+            await tx.knowledgeKeyword.createMany({
+              data: normalized.map((k) => ({ articleId: idParsed.data, keyword: k })),
+            });
+          }
+        }
+        return tx.knowledgeArticle.update({
+          where: { id: idParsed.data },
+          data: {
+            ...(data.title !== undefined ? { title: data.title } : {}),
+            ...(data.problemDescription !== undefined
+              ? { problemDescription: data.problemDescription }
+              : {}),
+            ...(data.solution !== undefined ? { solution: data.solution } : {}),
+            ...(data.serviceId !== undefined ? { serviceId: data.serviceId } : {}),
+            ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
+          },
+          include: {
+            service: { select: { id: true, name: true } },
+            keywords: { select: { keyword: true } },
+          },
+        });
       });
       return res.json({
         article: {
@@ -341,7 +385,7 @@ router.put(
           title: article.title,
           problemDescription: article.problemDescription,
           solution: article.solution,
-          keywords: article.keywords,
+          keywords: article.keywords.map((k) => k.keyword),
           service: article.service ? { id: article.service.id, name: article.service.name } : null,
           isActive: article.isActive,
           createdAt: article.createdAt,

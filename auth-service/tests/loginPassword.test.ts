@@ -9,6 +9,7 @@ import crypto from "crypto";
 const mockUserFindUnique = jest.fn();
 const mockUserUpdate = jest.fn();
 const mockUserUpsert = jest.fn();
+const mockUserCreate = jest.fn();
 const mockSessionCreate = jest.fn();
 const mockAuthLogCreate = jest.fn();
 
@@ -18,6 +19,7 @@ jest.mock("../src/db/client", () => ({
       findUnique: (...a: unknown[]) => mockUserFindUnique(...a),
       update: (...a: unknown[]) => mockUserUpdate(...a),
       upsert: (...a: unknown[]) => mockUserUpsert(...a),
+      create: (...a: unknown[]) => mockUserCreate(...a),
     },
     session: { create: (...a: unknown[]) => mockSessionCreate(...a) },
     authLog: { create: (...a: unknown[]) => mockAuthLogCreate(...a) },
@@ -48,13 +50,26 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockSessionCreate.mockResolvedValue({ id: "sess" });
   mockAuthLogCreate.mockResolvedValue({ id: "log" });
-  mockUserUpdate.mockResolvedValue({ id: USER_ID });
+  mockUserUpdate.mockImplementation(async (args) => ({
+    id: args.where?.id ?? USER_ID,
+    email: "docente@uta.edu.ec",
+    name: "Docente de Prueba",
+    role: "user",
+    microsoftId: null,
+    passwordHash: null,
+    ...(args.data ?? {}),
+  }));
   mockUserUpsert.mockImplementation(async (args) => ({
     id: USER_ID,
     email: args.where.email,
     name: args.update?.name ?? args.create?.name,
     role: args.update?.role ?? args.create?.role,
     microsoftId: args.update?.microsoftId ?? args.create?.microsoftId ?? null,
+    passwordHash: null,
+  }));
+  mockUserCreate.mockImplementation(async (args) => ({
+    id: USER_ID,
+    ...args.data,
     passwordHash: null,
   }));
 });
@@ -132,51 +147,63 @@ describe("POST /auth/login", () => {
   });
 });
 
-describe("POST /auth/microsoft-simulate", () => {
-  it("configura bparedes8678@uta.edu.ec como usuario solicitante Microsoft sin passwordHash", async () => {
+// Sprint 3+ — Nueva estrategia: sin mapping correo→rol en runtime.
+//   · Alta nueva: rol = admin si está en ADMIN_EMAILS, si no rol = user.
+//   · Login de usuario existente: rol se preserva de BD (no se sobreescribe).
+describe("POST /auth/microsoft-simulate — fuente de verdad = BD", () => {
+  it("alta nueva sin ADMIN_EMAILS: crea usuario con rol 'user' (sin hardcode)", async () => {
+    // Ningún usuario existe todavía → findUnique devuelve null.
+    mockUserFindUnique.mockResolvedValueOnce(null);
     const res = await request(app)
       .post("/auth/microsoft-simulate")
-      .send({ email: "bparedes8678@uta.edu.ec" });
+      .send({ email: "nuevo.docente@uta.edu.ec" });
 
     expect(res.status).toBe(200);
-    expect(res.body.user.correo).toBe("bparedes8678@uta.edu.ec");
     expect(res.body.user.rol).toBe("user");
+    expect(res.body.user.correo).toBe("nuevo.docente@uta.edu.ec");
     expect(JSON.stringify(res.body)).not.toContain("passwordHash");
 
-    const upsertArg = mockUserUpsert.mock.calls[0][0];
-    expect(upsertArg.where).toEqual({ email: "bparedes8678@uta.edu.ec" });
-    expect(upsertArg.update).toMatchObject({
-      name: "Belén Paredes",
-      role: "user",
-    });
-    expect(upsertArg.create).toMatchObject({
-      email: "bparedes8678@uta.edu.ec",
-      name: "Belén Paredes",
-      role: "user",
-    });
-    expect(upsertArg.create).not.toHaveProperty("passwordHash");
+    // Se usa create (no upsert), sin sobreescribir rol.
+    expect(mockUserCreate).toHaveBeenCalledTimes(1);
+    const createArg = mockUserCreate.mock.calls[0][0];
+    expect(createArg.data.email).toBe("nuevo.docente@uta.edu.ec");
+    expect(createArg.data.role).toBe("user");
+    expect(createArg.data).not.toHaveProperty("passwordHash");
   });
 
-  it("configura mgarcia7795@uta.edu.ec como técnico tech_n1 para área Técnicos", async () => {
+  it("login de usuario existente NO sobreescribe su rol (respeta BD)", async () => {
+    // El usuario ya existe como tech_n1 en BD.
+    mockUserFindUnique.mockResolvedValueOnce({
+      id: USER_ID,
+      email: "mgarcia7795@uta.edu.ec",
+      name: "Manolo García",
+      role: "tech_n1",
+      microsoftId: null,
+      passwordHash: null,
+    });
+
     const res = await request(app)
       .post("/auth/microsoft-simulate")
       .send({ email: "mgarcia7795@uta.edu.ec" });
 
     expect(res.status).toBe(200);
-    expect(res.body.user.correo).toBe("mgarcia7795@uta.edu.ec");
-    expect(res.body.user.rol).toBe("tech_n1");
+    expect(mockUserCreate).not.toHaveBeenCalled(); // no re-crea
+    expect(mockUserUpdate).toHaveBeenCalledTimes(1);
+    const updateArg = mockUserUpdate.mock.calls[0][0];
+    // El update NO debe incluir el campo `role` (BD es fuente de verdad).
+    expect(updateArg.data).not.toHaveProperty("role");
+  });
 
-    const upsertArg = mockUserUpsert.mock.calls[0][0];
-    expect(upsertArg.where).toEqual({ email: "mgarcia7795@uta.edu.ec" });
-    expect(upsertArg.update).toMatchObject({
-      name: "Manolo García",
-      role: "tech_n1",
-    });
-    expect(upsertArg.create).toMatchObject({
-      email: "mgarcia7795@uta.edu.ec",
-      name: "Manolo García",
-      role: "tech_n1",
-    });
-    expect(upsertArg.create).not.toHaveProperty("passwordHash");
+  it("alta de correo listado en ADMIN_EMAILS: role = admin (bootstrap)", async () => {
+    // ADMIN_EMAILS por defecto incluye admin@uta.edu.ec y msolis5357@uta.edu.ec.
+    mockUserFindUnique.mockResolvedValueOnce(null);
+    const res = await request(app)
+      .post("/auth/microsoft-simulate")
+      .send({ email: "admin@uta.edu.ec" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.user.rol).toBe("admin");
+    expect(mockUserCreate).toHaveBeenCalledTimes(1);
+    expect(mockUserCreate.mock.calls[0][0].data.role).toBe("admin");
   });
 });

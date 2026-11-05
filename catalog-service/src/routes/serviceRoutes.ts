@@ -1,7 +1,9 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../db/client";
-import { Level, Prisma, ResponsibleArea } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+// Sprint B: enums Level / ResponsibleArea en src/domain/enums.ts.
+import { Level, ResponsibleArea } from "../domain/enums";
 import { verifyJwt, requireRole } from "../middleware/verifyJwt";
 
 const router = Router();

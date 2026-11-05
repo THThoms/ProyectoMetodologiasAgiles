@@ -3,14 +3,21 @@
 
 import jwt from "jsonwebtoken";
 
-jest.mock("../src/db/client", () => ({
-  prisma: {
+// Sprint B: se añade `knowledgeKeyword` (nuevo modelo 1:N) y `$transaction`
+// (la ruta PUT /knowledge/:id ahora envuelve el update para poder resincronizar
+// keywords en la tabla puente).
+jest.mock("../src/db/client", () => {
+  const prisma: any = {
     knowledgeArticle: {
       findMany: jest.fn(),
       count: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
       create: jest.fn(),
+    },
+    knowledgeKeyword: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      createMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
     service: {
       findMany: jest.fn(),
@@ -22,8 +29,12 @@ jest.mock("../src/db/client", () => ({
       create: jest.fn(),
       update: jest.fn(),
     },
-  },
-}));
+    // La transacción ejecuta el callback pasándole el propio cliente
+    // (mock) — semántica portable a MSSQL/PG.
+    $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prisma)),
+  };
+  return { prisma };
+});
 
 import request from "supertest";
 import { createApp } from "../src/app";
@@ -49,12 +60,14 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+// Sprint B: `keywords` es ahora una relación 1:N — Prisma devuelve
+// { keyword: string } por fila. La ruta la aplana a string[] en la respuesta.
 const SAMPLE_VPN = {
   id: "kb1",
   title: "Error de conexión VPN institucional",
   problemDescription: "El usuario no puede conectarse a la VPN.",
   solution: "Verificar credenciales, conexión y configuración VPN.",
-  keywords: ["vpn", "red", "conexion"],
+  keywords: [{ keyword: "vpn" }, { keyword: "red" }, { keyword: "conexion" }],
   service: { id: "svc1", name: "Red e Internet" },
   updatedAt: new Date("2026-05-18T10:00:00Z"),
   createdAt: new Date("2026-05-18T10:00:00Z"),
@@ -92,13 +105,15 @@ describe("GET /knowledge/search - HU-10", () => {
     const call = (prisma.knowledgeArticle.findMany as jest.Mock).mock.calls[0][0];
     expect(call.where.isActive).toBe(true);
     const or = call.where.AND[0].OR;
+    // Sprint B: sin `mode: "insensitive"` (CI queda a cargo de la colación SQL
+    // Server) y `keywords` es ahora relación (`some.keyword`).
     expect(or).toEqual(
       expect.arrayContaining([
-        { title:              { contains: "wifi", mode: "insensitive" } },
-        { problemDescription: { contains: "wifi", mode: "insensitive" } },
-        { solution:           { contains: "wifi", mode: "insensitive" } },
-        { keywords:           { hasSome: ["wifi"] } },
-        { service: { name: { contains: "wifi", mode: "insensitive" } } },
+        { title:              { contains: "wifi" } },
+        { problemDescription: { contains: "wifi" } },
+        { solution:           { contains: "wifi" } },
+        { keywords:           { some: { keyword: "wifi" } } },
+        { service: { name: { contains: "wifi" } } },
       ])
     );
   });
@@ -112,7 +127,9 @@ describe("GET /knowledge/search - HU-10", () => {
 
     const call = (prisma.knowledgeArticle.findMany as jest.Mock).mock.calls[0][0];
     const or = call.where.AND[0].OR;
-    expect(or).toEqual(expect.arrayContaining([{ keywords: { hasSome: ["vpn"] } }]));
+    expect(or).toEqual(
+      expect.arrayContaining([{ keywords: { some: { keyword: "vpn" } } }])
+    );
   });
 
   // -------------------------------------------------------------------------

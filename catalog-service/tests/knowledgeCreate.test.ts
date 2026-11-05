@@ -131,11 +131,11 @@ describe("POST /knowledge", () => {
       .send(VALID_BODY);
     expect(res.status).toBe(201);
     expect(res.body.article.id).toBe(KB_ID);
-    // Keywords se guardan en lowercase
-    expect((prisma.knowledgeArticle.create as jest.Mock).mock.calls[0][0].data.keywords).toEqual([
-      "wifi",
-      "red",
-    ]);
+    // Sprint B: keywords se persisten en la tabla puente vía nested create.
+    // El shape ahora es { create: [{ keyword: "..." }, ...] } y llegan en lowercase.
+    expect((prisma.knowledgeArticle.create as jest.Mock).mock.calls[0][0].data.keywords).toEqual({
+      create: [{ keyword: "wifi" }, { keyword: "red" }],
+    });
     // createdByUserId tomado del JWT
     expect(
       (prisma.knowledgeArticle.create as jest.Mock).mock.calls[0][0].data.createdByUserId

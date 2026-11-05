@@ -1,4 +1,6 @@
-import { PrismaClient, Level, ResponsibleArea } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
+// Sprint B: Level / ResponsibleArea viven en src/domain/enums.ts.
+import { Level, ResponsibleArea } from "../src/domain/enums";
 
 const prisma = new PrismaClient();
 
@@ -410,7 +412,8 @@ async function main() {
       skipped++;
       continue;
     }
-    // Normalizamos keywords a lowercase y sin duplicados.
+    // Sprint B: keywords viven en tabla puente 1:N. Normalizadas a lowercase
+    // y deduplicadas antes de nested-create.
     const normalizedKeywords = Array.from(
       new Set(k.keywords.map((s) => s.toLowerCase()))
     );
@@ -419,8 +422,10 @@ async function main() {
         title: k.title,
         problemDescription: k.problemDescription,
         solution: k.solution,
-        keywords: normalizedKeywords,
         serviceId: service?.id ?? null,
+        keywords: {
+          create: normalizedKeywords.map((kw) => ({ keyword: kw })),
+        },
       },
     });
     created++;
