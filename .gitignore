@@ -93,3 +93,12 @@ SCRUM_ServiceDesk_2Sprints*.docx
 backup.env
 !deploy/backup/backup.env.example
 backups/
+
+# Fase X — configuración local de herramientas (puede contener comandos y datos sensibles)
+.claude/
+.codex/
+.cursor/
+.agents/
+
+# Fase X — cuentas de prueba locales (contraseñas conocidas y nombres de personas)
+auth-service/prisma/seed.demo.ts
