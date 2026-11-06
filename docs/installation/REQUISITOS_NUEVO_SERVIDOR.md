@@ -11,7 +11,7 @@ Cada cifra indica su origen:
 
 ## 1. Consumo medido
 
-Laboratorio local (`docker stats`, 2026-11-05, aplicación en reposo, 11 usuarios, 9 tickets) y VPS anterior (auditoría Fase P, 2026-11-04):
+Laboratorio local (`docker stats`, 2026-11-05, aplicación en reposo, 11 usuarios, 9 tickets) y servidor anterior (medición de 2026-11-04):
 
 | Componente | RAM en reposo [MEDIDO] | Límite del contenedor [CONFIG] | CPU límite [CONFIG] |
 |---|---:|---:|---:|
@@ -22,7 +22,7 @@ Laboratorio local (`docker stats`, 2026-11-05, aplicación en reposo, 11 usuario
 | api-gateway | 22 MiB | 256 MiB | 0,5 |
 | frontend (nginx) | 13 MiB | 128 MiB | 0,5 |
 | **Total** | **≈ 1,6 GiB** | **≈ 4,9 GiB de techo** | — |
-| VPS anterior completo | 1,4 GB ocupados de 7,9 GB | — | — |
+| Servidor anterior completo | 1,4 GB ocupados de 7,9 GB | — | — |
 
 | Almacenamiento | Tamaño |
 |---|---|

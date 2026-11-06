@@ -2,7 +2,7 @@
 
 Escrito para: el administrador del servidor.
 
-Resumen de las capas. El estado de los hallazgos de seguridad está en [ESTADO_SEGURIDAD_PRE_NUEVO_SERVIDOR.md](../security/ESTADO_SEGURIDAD_PRE_NUEVO_SERVIDOR.md).
+Resumen de las capas de seguridad del servidor.
 
 ## 1. Firewall (UFW)
 

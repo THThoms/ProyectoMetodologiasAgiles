@@ -80,4 +80,4 @@ La comprobación definitiva es la **4**: escanear desde fuera. Las demás miran 
 
 - Un registro **A** (y AAAA si hay IPv6) del dominio elegido hacia la IP del servidor.
 - El dominio se define **solo** en `PUBLIC_DOMAIN` (`deploy/server/.env`). De ahí salen nginx, `FRONTEND_URL`, CORS, `VITE_API_URL` del frontend web y la Redirect URI esperada del SSO.
-- **No se modifica el DNS del dominio actual** (`servicedesk-uta.site`) mientras el VPS anterior siga en servicio.
+- **No se modifica el DNS del dominio actual** mientras el servidor anterior siga en servicio.

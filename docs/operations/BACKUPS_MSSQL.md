@@ -116,6 +116,6 @@ Los códigos 3 y 4 disparan la alerta a propósito: un backup que solo está en 
 
   Sin repositorio externo, `auto` sí comprime, para ahorrar disco local. La edición Express nunca comprime.
 
-## 7. Instalaciones heredadas (VPS anterior)
+## 7. Instalaciones heredadas
 
-`backup-mssql.sh` sigue funcionando sobre el VPS anterior con `MSSQL_CONTAINER=sd-mssql TICKET_CONTAINER=sd-ticket SD_ENV_FILE=/opt/servicedesk-uta/.env.mssql`. **No se ha ejecutado allí** (regla: no tocar el VPS). Su timer todavía ejecuta el script de PostgreSQL y falla a diario (ver `docs/security/ESTADO_SEGURIDAD_PRE_NUEVO_SERVIDOR.md`).
+`backup-mssql.sh` también funciona sobre una instalación anterior, indicando sus contenedores y su `.env` con `MSSQL_CONTAINER`, `TICKET_CONTAINER` y `SD_ENV_FILE`. Hazlo solo con autorización sobre ese servidor.

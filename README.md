@@ -64,7 +64,7 @@ docker compose --env-file .env.mssql ps        # 6 servicios healthy
 | http://localhost:18080 | API Gateway |
 | 127.0.0.1:14330 | SQL Server (Developer, solo laboratorio) |
 
-- En el laboratorio, el auth-service corre con `NODE_ENV=development`, lo que permite dev-login, login Microsoft simulado y cuentas demo. Las credenciales demo están en `auth-service/prisma/seed.ts`. **En producción esos mecanismos quedan bloqueados en código.**
+- En el laboratorio, el auth-service corre con `NODE_ENV=development`, lo que permite dev-login, login Microsoft simulado y cuentas demo. Las cuentas de prueba se definen en `auth-service/prisma/seed.demo.ts`, fuera de Git; la plantilla es `seed.demo.example.ts`. **En producción esos mecanismos quedan bloqueados en código.**
 - Para detener: `docker compose --env-file .env.mssql down`. **Nunca** `down -v`, que borra la base de datos.
 
 ## Pruebas

@@ -64,4 +64,4 @@ Política de contraseña: ≥ 12 caracteres, con mayúscula, minúscula, número
 
 ## Cuentas demo
 
-Las cuentas de prueba del laboratorio (`admin@uta.edu.ec`, `docente@uta.edu.ec`, técnicos con contraseñas tipo `tecn1123`…) **no se crean** en producción: el seed solo las crea con `SEED_DEMO_USERS=true` **y** `NODE_ENV≠production`. En el VPS anterior **sí existen** (ver el informe de seguridad).
+Las cuentas de prueba del laboratorio **no se crean** en producción: el seed solo las carga con `SEED_DEMO_USERS=true` **y** `NODE_ENV≠production`, y sus datos no forman parte de este paquete.

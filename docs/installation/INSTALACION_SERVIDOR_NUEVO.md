@@ -155,10 +155,10 @@ Continúa en el **paso 7**.
 ## 6B. MODO B — Restauración desde backups
 
 1. **Obtén un backup reciente del servidor de origen.** El directorio debe contener `auth_db-*.bak`, `catalog_db-*.bak`, `ticket_db-*.bak` (en la raíz o en `db/`), las imágenes (`uploads/` + `uploads.sha256`, o `uploads-*.tar.gz`) y `SHA256SUMS`. Si el origen ya no existe, recupéralo del repositorio cifrado: [RESTAURACION_SERVIDOR_NUEVO.md](../operations/RESTAURACION_SERVIDOR_NUEVO.md).
-   Desde el **VPS anterior**, si tienes autorización: sus backups automáticos fallan desde el 15-sep-2026, así que haz uno nuevo con el script de este paquete en modo heredado. Copia `scripts/` al VPS (p. ej. a `/root/sd-scripts/`) y ejecuta allí:
+   Desde una **instalación anterior**, si tienes autorización: haz un backup nuevo con el script de este paquete en modo heredado. Copia `scripts/` a ese servidor (p. ej. a `/root/sd-scripts/`) y ejecuta allí, con los nombres de contenedor y la ruta del `.env` de esa instalación:
    ```bash
-   # cd /root/sd-scripts && MSSQL_CONTAINER=sd-mssql TICKET_CONTAINER=sd-ticket \
-     SD_ENV_FILE=/opt/servicedesk-uta/.env.mssql BACKUP_DIR=/root/backups/migracion \
+   # cd /root/sd-scripts && MSSQL_CONTAINER=<CONTENEDOR_SQL> TICKET_CONTAINER=<CONTENEDOR_TICKETS> \
+     SD_ENV_FILE=<RUTA_DEL_ENV> BACKUP_DIR=/root/backups/migracion \
      BACKUP_REQUIRE_OFFSITE=false ./backup-mssql.sh
    ```
    Esperado: `✔ Backup local completo: /root/backups/migracion/sets/<ID>` (sin repositorio externo configurado, las imágenes van en `uploads-*.tar.gz` dentro del conjunto). Copia esa carpeta al servidor nuevo, p. ej. a `/root/restore/<ID>/`.

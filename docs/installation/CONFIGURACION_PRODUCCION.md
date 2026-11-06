@@ -64,7 +64,7 @@ y la rechaza si es `Developer` o `Evaluation`.
 
 - `MSSQL_PID` también admite una **clave de producto** (`XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`).
 - La imagen `mcr.microsoft.com/mssql/server:2022-latest` es la misma para todas las ediciones; `MSSQL_PID` determina la edición y la licencia que aceptas (`ACCEPT_EULA=Y`).
-- **La decisión de licencia corresponde al propietario del sistema o a la UTA.** El instalador pide una confirmación explícita. El VPS anterior usa `Developer` (ver `docs/security/ESTADO_SEGURIDAD_PRE_NUEVO_SERVIDOR.md`).
+- **La decisión de licencia corresponde al propietario del sistema o a la UTA.** El instalador pide una confirmación explícita.
 - Tras instalar, la edición real se comprueba con `SERVERPROPERTY('Edition')`. El instalador aborta si no coincide con `MSSQL_PID`.
 - Express no soporta `BACKUP … WITH COMPRESSION`. `scripts/backup-mssql.sh` lo detecta y hace el backup sin compresión.
 

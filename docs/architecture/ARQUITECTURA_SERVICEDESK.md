@@ -1,7 +1,7 @@
 # Arquitectura de ServiceDesk UTA
 
 Escrito para: desarrolladores y operadores que necesitan entender el sistema sin contexto previo.
-Vigente desde la Fase P (2026-11). Sustituye a `docs/history/mssql-migration/ARQUITECTURA_FINAL.md`.
+Vigente desde 2026-11.
 
 ## 1. Qué es
 
@@ -136,7 +136,7 @@ abierto ─aceptar→ en_proceso ─resolver→ pendiente_validacion
 |---|---|---|---|
 | Desarrollo / laboratorio | `compose.yaml` + `.env.mssql` | Developer | Puertos 14330/18080/13000 en 127.0.0.1; dev-login y cuentas demo |
 | Servidor nuevo (producción) | `deploy/server/compose.yaml` + `deploy/server/.env` | Edición definida por `MSSQL_PID` (obligatoria) | Instalador `scripts/install-server.sh` |
-| VPS actual (heredado) | `docker-compose.prod-mssql.yml` | Developer (ver informe de seguridad) | No modificar; se retira tras la migración |
+| Instalación heredada | — | — | No forma parte de este paquete; se retira tras la migración |
 
 ## 10. Tecnologías
 
