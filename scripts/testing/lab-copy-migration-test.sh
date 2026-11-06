@@ -60,8 +60,12 @@ fi
 SRC_SET="$(grep -E '^[a-z_]+=[0-9]+ [0-9]+$' "$SET/counts.txt" | awk -F'[= ]' '{print $1"="$3}' | tr '\n' ' ')"
 
 step "2. Instalación aislada en modo restauración con el código nuevo"
-V="labcopy-$(date -u +%Y%m%d%H%M%S)"
-"$ROOT/scripts/build-server-package.sh" "$V" >/dev/null && PKG="$ROOT/release/servicedesk-uta-server-$V.tar.gz"
+if [ -n "${FROM_PACKAGE:-}" ]; then
+  PKG="$FROM_PACKAGE"; ( cd "$(dirname "$PKG")" && sha256sum -c "$(basename "$PKG").sha256" ) >/dev/null && res "Paquete indicado, SHA-256 correcto ($(basename "$PKG"))" OK || { res "Paquete indicado" FALLO; exit 1; }
+else
+  V="labcopy-$(date -u +%Y%m%d%H%M%S)"
+  "$ROOT/scripts/build-server-package.sh" "$V" >/dev/null && PKG="$ROOT/release/servicedesk-uta-server-$V.tar.gz"
+fi
 mkdir -p "$WORK/srv" && tar --force-local -xzf "$PKG" -C "$WORK/srv" --strip-components=1
 f="$WORK/srv/deploy/server/.env"; cp "$WORK/srv/.env.example" "$f"
 sed -i -e "s#^PUBLIC_DOMAIN=.*#PUBLIC_DOMAIN=localhost:$TLS#" -e "s#^MSSQL_PID=.*#MSSQL_PID=Developer#" -e "s#^SERVER_PURPOSE=.*#SERVER_PURPOSE=pruebas#" \
@@ -192,4 +196,4 @@ SRC1="$(lab_counts)"
 
 step "RESUMEN"
 okc=0; fc=0; for r in "${RESULTS[@]}"; do [ "${r#*|}" = OK ] && okc=$((okc+1)) || fc=$((fc+1)); printf '  %-84s %s\n' "${r%%|*}" "${r#*|}"; done
-echo "LAB-COPY: $okc OK · $fc fallos"; rm -f "$PKG" "${PKG%.tar.gz}".*; [ "$fc" -eq 0 ]
+echo "LAB-COPY: $okc OK · $fc fallos"; [ -n "${FROM_PACKAGE:-}" ] || rm -f "$PKG" "${PKG%.tar.gz}".*; [ "$fc" -eq 0 ]

@@ -13,12 +13,14 @@
 # Incluye solo lo necesario para construir y operar en el servidor: fuentes de
 # los 5 componentes, Dockerfiles, deploy/, scripts/ de servidor, .env.example y
 # documentación vigente. EXCLUYE: .env reales, secretos, node_modules, dist,
-# build, Android/APK, backups, uploads, .git, archivo PostgreSQL, historial.
+# build, Android/APK, backups, uploads, .git, archivo PostgreSQL, historial,
+# auditorías de seguridad, pruebas, cuentas demo y herramientas de laboratorio.
 #
 # Verificaciones antes de empaquetar (aborta si fallan):
 #   · ningún .env real, clave privada, keystore ni google-services.json
 #   · ningún VALOR secreto de los .env locales aparece en el contenido
 #   · ninguna referencia de runtime a PostgreSQL en deploy/ y scripts/
+#   · ninguna ruta interna, IP pública, contraseña demo ni cuenta institucional real
 # =============================================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -32,8 +34,8 @@ mkdir -p "$OUT" "$STAGE"
 
 INCLUDE=(
   api-gateway auth-service catalog-service ticket-service frontend
-  deploy scripts .env.example README.md
-  docs/architecture docs/installation docs/operations docs/security docs/troubleshooting
+  deploy scripts .env.example
+  docs/architecture docs/installation docs/operations docs/troubleshooting
 )
 EXCLUDES=(
   --exclude='node_modules' --exclude='dist' --exclude='build' --exclude='coverage'
@@ -45,6 +47,12 @@ EXCLUDES=(
   --exclude='*.apk' --exclude='*.aab' --exclude='*.bak' --exclude='*.tar.gz'
   --exclude='scripts/legacy' --exclude='.install-state*'
   --exclude='deploy/backup-lab' --exclude='*.pass' --exclude='backup.env' --exclude='scripts/testing/backup-dr-simulation.sh'
+  --exclude='*/tests' --exclude='auth-service/prisma/seed.demo*' --exclude='ticket-service/scripts/seedHistoricalTickets.js'
+  --exclude='frontend/scripts' --exclude='frontend/capacitor.config.ts'
+  --exclude='scripts/testing/lab-copy-migration-test.sh' --exclude='scripts/testing/browser-ui-check.mjs'
+  --exclude='scripts/testing/new-server-simulation.sh' --exclude='scripts/testing/dr-validate.mjs'
+  --exclude='scripts/init-mssql-lab.sh' --exclude='scripts/init-mssql-lab.sql'
+  --exclude='scripts/build-server-package.sh' --exclude='scripts/README.md'
 )
 PRESENT=()
 for p in "${INCLUDE[@]}"; do
@@ -80,6 +88,31 @@ for envf in .env .env.mssql deploy/server/.env; do
 done
 [ "$leaks" -eq 0 ] || exit 1
 echo "  ✔ $checked valores secretos locales comprobados: 0 apariciones"
+
+# Fase X: nada interno ni de laboratorio en lo que se distribuye.
+forbidden="$(cd "$STAGE" && find . \( -path './docs/security*' -o -path './docs/history*' -o -path './archive*' -o -path '*/tests' -o -name 'seed.demo*' -o -name 'schema.pg*' -o -name 'seedHistoricalTickets.js' \) -print)"
+[ -z "$forbidden" ] || { echo "✘ Rutas internas en el paquete:"; echo "$forbidden"; exit 1; }
+if [ -f auth-service/prisma/seed.demo.ts ]; then
+  demo_hits=0
+  while IFS= read -r v; do
+    # passwordSecurity.ts las lista como contraseñas prohibidas: no son credenciales.
+    grep -rIqF --exclude=passwordSecurity.ts -- "$v" "$STAGE" && demo_hits=$((demo_hits + 1))
+  done < <(sed -n 's/.*password: "\([^"]*\)".*/\1/p' auth-service/prisma/seed.demo.ts)
+  [ "$demo_hits" -eq 0 ] || { echo "✘ $demo_hits contraseñas demo aparecen en el paquete"; exit 1; }
+  # Personas y correos de las cuentas demo (las genéricas de prueba no identifican a nadie).
+  people_hits=0
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    grep -rIqF -- "$v" "$STAGE" && people_hits=$((people_hits + 1))
+  done < <( { sed -n 's/.*name: "\([^"]*\)".*/\1/p' auth-service/prisma/seed.demo.ts | grep -vE 'Prueba|UTA' | sed 's/ (.*//'; \
+              grep -oE '[a-z0-9._-]+@uta\.edu\.ec' auth-service/prisma/seed.demo.ts | grep -vE '^(admin|docente|estudiante)@'; } )
+  [ "$people_hits" -eq 0 ] || { echo "✘ $people_hits datos de personas de las cuentas demo aparecen en el paquete"; exit 1; }
+fi
+ips="$(grep -rIoE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' "$STAGE" --exclude=package-lock.json | grep -vE ':(127\.|10\.|0\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|169\.254\.|255\.|192\.0\.2\.|198\.51\.100\.|203\.0\.113\.)' || true)"
+[ -z "$ips" ] || { echo "✘ Direcciones IP públicas en el paquete (archivo, sin valor):"; echo "$ips" | cut -d: -f1 | sort -u; exit 1; }
+accounts="$(grep -rIlE '\b[a-z]+[0-9]{3,}@uta\.edu\.ec\b' "$STAGE" || true)"
+[ -z "$accounts" ] || { echo "✘ Cuentas institucionales con formato real en el paquete:"; echo "$accounts"; exit 1; }
+echo "  ✔ sin auditorías, pruebas, cuentas demo, IP públicas ni cuentas reales"
 
 pg="$(grep -rIniE --exclude=build-server-package.sh 'postgres|5432|pg_dump' "$STAGE/deploy" "$STAGE/scripts" | grep -viE '^[^:]+:[0-9]+:\s*#|PostgreSQL (fue|está) retirado|no (usa|requiere|instala) PostgreSQL|sin PostgreSQL|PostgreSQL retirado' || true)"
 [ -z "$pg" ] || { echo "✘ Referencias de runtime a PostgreSQL:"; echo "$pg"; exit 1; }
@@ -118,12 +151,14 @@ cat > "$STAGE/MANIFEST.md" <<EOF
 | \`scripts/operations/\` | Smoke, gestión de usuarios, verificación de backups, alertas |
 | \`scripts/testing/smoke-e2e.mjs\` | Prueba E2E funcional (requiere Node 20+, opcional) |
 | \`.env.example\` | Plantilla única de configuración (sin valores) |
-| \`docs/\` | Arquitectura, instalación, operación, seguridad y solución de problemas |
+| \`docs/\` | Arquitectura, instalación, operación y solución de problemas |
 
 ## Qué NO contiene
 Ningún \`.env\` real, contraseña, JWT, clave FCM, service account de Firebase,
 credencial SMTP o Cloudinary, certificado TLS, APK, \`node_modules\`, backups,
-imágenes de usuarios, datos personales, \`.git\` ni archivos de PostgreSQL.
+imágenes de usuarios, datos personales, \`.git\` ni archivos de PostgreSQL. Tampoco
+auditorías de seguridad, historial de fases, pruebas automatizadas, cuentas demo ni
+herramientas de laboratorio.
 
 ## Verificar e instalar
 \`\`\`bash

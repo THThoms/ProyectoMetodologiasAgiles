@@ -25,6 +25,8 @@
 #
 #   scripts/testing/new-server-simulation.sh            # ejecuta todo
 #   scripts/testing/new-server-simulation.sh --cleanup  # borra SOLO los proyectos de prueba
+#   FROM_PACKAGE=release/<paquete>.tar.gz scripts/testing/new-server-simulation.sh
+#       instala desde ese paquete, sin generar otro a partir del repositorio
 #
 # Requiere Docker, bash, curl, openssl, tar, sha256sum y Node 20+ (para el E2E).
 # NO toca el laboratorio (servicedesk-microservices) ni ningún servidor remoto.
@@ -59,10 +61,14 @@ done
 rm -rf "$WORK"; mkdir -p "$WORK"
 
 step "1. Paquete"
-VERSION="sim-$(date -u +%Y%m%d%H%M%S)"
-"$ROOT/scripts/build-server-package.sh" "$VERSION" | tail -n 4
-PKG="$ROOT/release/servicedesk-uta-server-$VERSION.tar.gz"
-( cd "$ROOT/release" && sha256sum -c "servicedesk-uta-server-$VERSION.tar.gz.sha256" ) && res "Paquete: SHA-256" OK
+if [ -n "${FROM_PACKAGE:-}" ]; then
+  PKG="$FROM_PACKAGE"; echo "Paquete indicado: $(basename "$PKG")"
+else
+  VERSION="sim-$(date -u +%Y%m%d%H%M%S)"
+  "$ROOT/scripts/build-server-package.sh" "$VERSION" | tail -n 4
+  PKG="$ROOT/release/servicedesk-uta-server-$VERSION.tar.gz"
+fi
+( cd "$(dirname "$PKG")" && sha256sum -c "$(basename "$PKG").sha256" ) && res "Paquete: SHA-256" OK
 mkdir -p "$WORK/clean" "$WORK/restore"
 tar -xzf "$PKG" -C "$WORK/clean" --strip-components=1
 tar -xzf "$PKG" -C "$WORK/restore" --strip-components=1
@@ -204,7 +210,7 @@ node "$WORK/clean/scripts/testing/smoke-e2e.mjs" \
 
 counts() { sd_query "SELECT CONCAT('users=', (SELECT COUNT(*) FROM auth_db.dbo.users), ' services=', (SELECT COUNT(*) FROM catalog_db.dbo.services), ' kb=', (SELECT COUNT(*) FROM catalog_db.dbo.knowledge_articles), ' tickets=', (SELECT COUNT(*) FROM ticket_db.dbo.tickets), ' events=', (SELECT COUNT(*) FROM ticket_db.dbo.ticket_events), ' attachments=', (SELECT COUNT(*) FROM ticket_db.dbo.attachments), ' outbox=', (SELECT COUNT(*) FROM ticket_db.dbo.email_outbox), ' devices=', (SELECT COUNT(*) FROM ticket_db.dbo.device_tokens));" | tr -d '\r' | head -n1; }
 C0="$(counts)"; echo "Conteos tras E2E: $C0"
-demo="$(sd_query "SELECT COUNT(*) FROM auth_db.dbo.users WHERE email IN ('admin@uta.edu.ec','docente@uta.edu.ec','carlos.mena@uta.edu.ec');" | tr -d '\r' | head -n1)"
+demo="$(sd_query "SELECT COUNT(*) FROM auth_db.dbo.users WHERE email IN ('admin@uta.edu.ec','docente@uta.edu.ec','estudiante@uta.edu.ec');" | tr -d '\r' | head -n1)"
 [ "$demo" = 0 ] && res "Sin cuentas demo en producción (seed seguro)" OK || res "Sin cuentas demo" "FALLO ($demo)"
 idx="$(sd_query "SELECT COUNT(*) FROM auth_db.sys.indexes WHERE name='users_ms_oid_key_filtered';" | tr -d '\r' | head -n1)"
 [ "$idx" = 1 ] && res "Filtered index ms_oid" OK || res "Filtered index ms_oid" FALLO
