@@ -60,7 +60,7 @@ function isAdminEmail(email: string): boolean {
 //       - El rol NO se sobreescribe nunca en cada login, para respetar los
 //         cambios administrativos.
 //
-// Ya no existe mapping correo→rol en código: ni Belén Paredes ni Manolo
+// Ya no existe mapping correo→rol en código: ninguna cuenta concreta recibe un rol por su correo.
 // García ni ningún otro correo específico se resuelve aquí. Los seeds pueden
 // crear usuarios iniciales, pero el runtime lee siempre de la BD.
 export async function upsertUserFromMicrosoft(claims: MicrosoftClaims) {

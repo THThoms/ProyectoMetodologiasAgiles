@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import path from "path";
 // Sprint B: Role vive en src/domain/enums.ts (Prisma-SQLServer no genera enums).
 // El seed corre con ts-node desde `prisma/`; el path relativo cruza a src/.
 import { Role } from "../src/domain/enums";
@@ -18,7 +19,7 @@ function hashPassword(password: string): string {
 
 // =============================================================================
 // HU-13 - NOTA DE SEGURIDAD:
-// Las contraseñas de abajo son SOLO para entorno de desarrollo local. Son
+// Las contraseñas de seed.demo.ts son SOLO para entorno de desarrollo local. Son
 // credenciales conocidas para facilitar las pruebas del equipo y NO cumplen la
 // política de contraseñas seguras (validatePasswordPolicy) a propósito: la
 // política se aplica a operaciones vía API (creación / cambio de contraseña),
@@ -40,23 +41,20 @@ type MicrosoftSeedUser = {
   role: Role;
 };
 
-const seedUsers: SeedUser[] = [
-  { email: "admin@uta.edu.ec",       name: "Administrador UTA",          role: Role.admin,   password: "admin123" },
-  { email: "msolis5357@uta.edu.ec",  name: "Tomás Solís (Admin)",        role: Role.admin,   password: "msolis123" },
-  { email: "carlos.mena@uta.edu.ec",     name: "Carlos Mena",     role: Role.technician, password: "tecn1123", legacyEmails: ["tecn1@uta.edu.ec"] },
-  { email: "daniela.paredes@uta.edu.ec", name: "Daniela Paredes", role: Role.technician, password: "tecn2123", legacyEmails: ["tecn2@uta.edu.ec"] },
-  { email: "andres.salazar@uta.edu.ec",  name: "Andrés Salazar",  role: Role.dtic, password: "tecn3123", legacyEmails: ["tecn3@uta.edu.ec"] },
-  { email: "valeria.nunez@uta.edu.ec",   name: "Valeria Núñez",   role: Role.dtic, password: "tecn4123", legacyEmails: ["tecn4@uta.edu.ec"] },
-  { email: "mateo.cordova@uta.edu.ec",   name: "Mateo Córdova",   role: Role.dtic, password: "tecn5123", legacyEmails: ["tecn5@uta.edu.ec"] },
-  { email: "docente@uta.edu.ec",     name: "Docente de Prueba",          role: Role.user,    password: "docente123" },
-  { email: "estudiante@uta.edu.ec",  name: "Estudiante de Prueba",       role: Role.user,    password: "estudiante123" },
-];
-
-const microsoftSeedUsers: MicrosoftSeedUser[] = [
-  { email: "bparedes8678@uta.edu.ec", name: "Belén Paredes", role: Role.user },
-  // technician: área Técnicos (TECHNICIANS) en ticket-service.
-  { email: "mgarcia7795@uta.edu.ec", name: "Manolo García", role: Role.technician },
-];
+// Las cuentas demo viven en prisma/seed.demo.ts, que no se incluye en el paquete de
+// servidor. Se carga en tiempo de ejecución para que el seed funcione sin ese archivo.
+export function loadDemoUsers(
+  modulePath: string = path.join(__dirname, "seed.demo")
+): { seedUsers: SeedUser[]; microsoftSeedUsers: MicrosoftSeedUser[] } | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const m = require(modulePath);
+    return { seedUsers: m.seedUsers, microsoftSeedUsers: m.microsoftSeedUsers };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "MODULE_NOT_FOUND") return null;
+    throw err;
+  }
+}
 
 // =============================================================================
 // Fase P · seguridad — política de siembra de usuarios
@@ -78,6 +76,13 @@ async function main() {
     console.log("Seed auth-service: producción o sin SEED_DEMO_USERS — no se crean usuarios.");
     return;
   }
+
+  const demo = loadDemoUsers();
+  if (!demo) {
+    console.warn("Seed auth-service: SEED_DEMO_USERS=true pero prisma/seed.demo.ts no existe (paquete de servidor). No se crean usuarios.");
+    return;
+  }
+  const { seedUsers, microsoftSeedUsers } = demo;
 
   console.log("Seed auth-service: modo DEMO (SEED_DEMO_USERS=true, NODE_ENV != production).");
   for (const u of seedUsers) {
