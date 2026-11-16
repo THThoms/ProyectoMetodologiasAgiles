@@ -38,7 +38,8 @@ model Ticket {
   serviceId              String           @map("service_id") @db.UniqueIdentifier
   serviceName            String?          @map("service_name")
   detail                 String   @db.NVarChar(Max)
-  location               String?  @db.VarChar(255)
+  // Unicode: la ubicación la escribe el usuario (tildes, símbolos). Era VarChar.
+  location               String?  @db.NVarChar(255)
   status                 String   @default("abierto") @db.NVarChar(24)
   priority               String   @default("media") @db.NVarChar(16)
   responsibleArea        String   @default("TECHNICIANS") @db.NVarChar(16) @map("responsible_area")
@@ -65,6 +66,8 @@ model Ticket {
   @@index([responsibleArea])
   @@index([assignmentStatus])
   @@index([assignedTechnicianId])
+  // Reportes y estadísticas filtran por quién resolvió.
+  @@index([resolvedById])
   @@map("tickets")
 }
 

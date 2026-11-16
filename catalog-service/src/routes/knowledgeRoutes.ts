@@ -8,12 +8,14 @@
 //                                 un ticket (Sprint 2 rev).
 //
 import { Router, Request, Response } from "express";
+import { asyncSafe } from "../utils/asyncRoutes";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db/client";
 import { verifyJwt, requireRole } from "../middleware/verifyJwt";
 
-const router = Router();
+// asyncSafe: un error asíncrono de cualquier ruta llega al middleware de error.
+const router = asyncSafe(Router());
 
 // Fase R: la base de conocimiento es institucional y compartida por todo el
 // personal (admin, technician, dtic); su edición sigue siendo solo de admin.
@@ -165,15 +167,19 @@ router.get(
 // resolución de ticket cuando el técnico elige "Crear nueva solución".
 //   body: { title, problemDescription, solution, keywords[>=1], serviceId? }
 // ---------------------------------------------------------------------------
+/** Tope de los textos de un artículo. */
+const MAX_KB_TEXT = 20000;
+
 const createSchema = z.object({
   title: z.string().trim().min(3, "El título debe tener al menos 3 caracteres").max(200),
   problemDescription: z
     .string()
     .trim()
-    .min(10, "La descripción del problema debe tener al menos 10 caracteres"),
-  solution: z.string().trim().min(10, "La solución debe tener al menos 10 caracteres"),
+    .min(10, "La descripción del problema debe tener al menos 10 caracteres")
+    .max(MAX_KB_TEXT),
+  solution: z.string().trim().min(10, "La solución debe tener al menos 10 caracteres").max(MAX_KB_TEXT),
   keywords: z
-    .array(z.string().trim().min(1))
+    .array(z.string().trim().min(1).max(80))
     .min(1, "Debes proporcionar al menos una palabra clave")
     .max(20),
   serviceId: z.string().uuid().optional(),
@@ -315,9 +321,9 @@ router.get(
 
 const updateSchema = z.object({
   title: z.string().trim().min(3).max(200).optional(),
-  problemDescription: z.string().trim().min(10).optional(),
-  solution: z.string().trim().min(10).optional(),
-  keywords: z.array(z.string().trim().min(1)).min(1).max(20).optional(),
+  problemDescription: z.string().trim().min(10).max(MAX_KB_TEXT).optional(),
+  solution: z.string().trim().min(10).max(MAX_KB_TEXT).optional(),
+  keywords: z.array(z.string().trim().min(1).max(80)).min(1).max(20).optional(),
   serviceId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),
 });

@@ -10,8 +10,10 @@
 // La versión anterior de este archivo está en el historial de git.
 // =============================================================================
 import { Router, Request, Response } from "express";
+import { asyncSafe } from "../utils/asyncRoutes";
 
-const router = Router();
+// asyncSafe: un error asíncrono de cualquier ruta llega al middleware de error.
+const router = asyncSafe(Router());
 
 const gone = (_req: Request, res: Response) =>
   res.status(410).json({

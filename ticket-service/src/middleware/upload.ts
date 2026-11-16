@@ -26,6 +26,10 @@ export const uploadAttachments = multer({
   limits: {
     fileSize: env.upload.maxFileSizeBytes,
     files: env.upload.maxFiles,
+    // El formulario solo lleva serviceId, detail, location y priority.
+    fields: 10,
+    fieldSize: 64 * 1024,
+    parts: env.upload.maxFiles + 10,
   },
   fileFilter: (_req, file, cb) => {
     if (/^image\/hei[cf]/i.test(file.mimetype) || /\.hei[cf]$/i.test(file.originalname)) {

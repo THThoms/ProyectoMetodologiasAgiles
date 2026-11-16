@@ -82,6 +82,7 @@ const STATUS_LABEL: Record<TicketStatus, string> = {
   abierto: "Pendiente",
   en_proceso: "En Proceso",
   escalado: "Escalado",
+  pendiente_validacion: "Pendiente de validación",
   resuelto: "Resuelto",
   cerrado: "Cerrado",
 };
@@ -143,6 +144,8 @@ export function describeEvent(event: {
       return `${performer} aceptó la solución propuesta — ticket cerrado`;
     case "USER_REJECTED_RESOLUTION":
       return `${performer} rechazó la solución — el ticket vuelve a proceso`;
+    case "VALIDATION_REMINDER":
+      return "Recordatorio enviado al solicitante: solución pendiente de validación";
     case "CLOSED":
       return `${performer} cerró el ticket`;
     default:

@@ -52,12 +52,30 @@ describe("GET /locations (público)", () => {
     expect(call.orderBy).toEqual({ name: "asc" });
   });
 
-  it("includeInactive=true lista todas", async () => {
+  it("includeInactive=true lista todas (solo administrador)", async () => {
     (prisma.location.findMany as jest.Mock).mockResolvedValue([SAMPLE]);
-    const res = await request(app).get("/locations?includeInactive=true");
+    const res = await request(app)
+      .get("/locations?includeInactive=true")
+      .set("Authorization", `Bearer ${makeToken("admin")}`);
     expect(res.status).toBe(200);
     const call = (prisma.location.findMany as jest.Mock).mock.calls[0][0];
     expect(call.where).toEqual({});
+  });
+
+  // Auditoría final: las ubicaciones dadas de baja son información
+  // administrativa; sin JWT o con otro rol el filtro se rechaza.
+  it("includeInactive=true sin JWT → 401 y no consulta la base", async () => {
+    const res = await request(app).get("/locations?includeInactive=true");
+    expect(res.status).toBe(401);
+    expect(prisma.location.findMany).not.toHaveBeenCalled();
+  });
+
+  it("includeInactive=true con técnico → 403", async () => {
+    const res = await request(app)
+      .get("/locations?includeInactive=true")
+      .set("Authorization", `Bearer ${makeToken("technician")}`);
+    expect(res.status).toBe(403);
+    expect(prisma.location.findMany).not.toHaveBeenCalled();
   });
 });
 

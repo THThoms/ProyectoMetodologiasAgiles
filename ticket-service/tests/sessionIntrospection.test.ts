@@ -40,3 +40,29 @@ it("auth-service caído → 503 (falla cerrado, no deja pasar)", async () => {
   post.mockRejectedValue(new Error("ECONNREFUSED"));
   expect((await request(app).get("/tickets/my").set("Authorization", `Bearer ${tok(3)}`)).status).toBe(503);
 });
+
+// Auditoría final — ventana de revocación acotada: una sesión válida se recuerda
+// solo SESSION_CACHE_TTL_MS (5 s por defecto); pasado ese tiempo se vuelve a
+// consultar auth-service y un logout se hace efectivo.
+it("tras expirar la caché positiva, la revocación se aplica (ventana ≤ TTL)", async () => {
+  process.env.SESSION_CACHE_TTL_MS = "40";
+  try {
+    post.mockResolvedValueOnce({ status: 200 });
+    const t = tok(4);
+    expect((await request(app).get("/tickets/my").set("Authorization", `Bearer ${t}`)).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 60));
+    post.mockResolvedValueOnce({ status: 401 }); // logout entre medias
+    expect((await request(app).get("/tickets/my").set("Authorization", `Bearer ${t}`)).status).toBe(401);
+    // Un rechazo se recuerda (caché negativa): no se vuelve a consultar en seguida.
+    expect((await request(app).get("/tickets/my").set("Authorization", `Bearer ${t}`)).status).toBe(401);
+    expect(post).toHaveBeenCalledTimes(2);
+  } finally {
+    delete process.env.SESSION_CACHE_TTL_MS;
+  }
+});
+
+it("la caché positiva por defecto es de 5 s, no de 30 s", () => {
+  delete process.env.SESSION_CACHE_TTL_MS;
+  const src = require("node:fs").readFileSync(require.resolve("../src/middleware/verifyJwt"), "utf8");
+  expect(src).toMatch(/SESSION_CACHE_TTL_MS \?\? 5_000/);
+});

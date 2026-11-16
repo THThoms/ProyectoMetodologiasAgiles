@@ -618,6 +618,30 @@ describe("PUT /tickets/:id/escalate", () => {
 // POST /admin/tickets/:id/assign
 // =============================================================================
 describe("POST /admin/tickets/:id/assign", () => {
+  it("409 si el ticket está pendiente de validación del solicitante", async () => {
+    mockTicket({ status: "pendiente_validacion", assignedTechnicianId: TECH_ID });
+    // La guarda actúa antes de consultar auth-service: no se encola ningún mock.
+    const token = makeToken("admin");
+    const res = await request(app)
+      .post(`/admin/tickets/${TICKET_ID}/assign`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ technicianId: TECH_ID });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/pendiente de validación/);
+    expect(mockTicketUpdate).not.toHaveBeenCalled();
+  });
+
+  it("409 si el ticket ya está resuelto (estado final heredado)", async () => {
+    mockTicket({ status: "resuelto", assignedTechnicianId: TECH_ID });
+    const token = makeToken("admin");
+    const res = await request(app)
+      .post(`/admin/tickets/${TICKET_ID}/assign`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ technicianId: TECH_ID });
+    expect(res.status).toBe(409);
+    expect(mockTicketUpdate).not.toHaveBeenCalled();
+  });
+
   it("admin asigna técnico válido con área compatible", async () => {
     mockTicket({ responsibleArea: "TECHNICIANS" });
     (fetchUsersByIds as jest.Mock).mockResolvedValueOnce([

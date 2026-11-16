@@ -257,8 +257,15 @@ services:
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}
+      # Vacío = exigir STARTTLS siempre que haya SMTP_USER y SMTP_PASS.
+      SMTP_REQUIRE_TLS: ${SMTP_REQUIRE_TLS:-}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
+      # Reintentos automáticos del outbox (0 = solo manual) y recordatorios al
+      # solicitante con una solución sin validar (días; 0 = desactivado).
+      EMAIL_OUTBOX_WORKER_INTERVAL_SEC: ${EMAIL_OUTBOX_WORKER_INTERVAL_SEC:-60}
+      VALIDATION_REMINDER_DAYS: ${VALIDATION_REMINDER_DAYS:-3}
+      VALIDATION_REMINDER_INTERVAL_MIN: ${VALIDATION_REMINDER_INTERVAL_MIN:-60}
       STORAGE_MODE: ${STORAGE_MODE:-local}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}

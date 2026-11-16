@@ -208,3 +208,16 @@ export function serializeAttachment(
     fileSize: a.fileSize,
   };
 }
+
+/**
+ * Devuelve el ticket con sus adjuntos serializados para el navegador (endpoint
+ * autenticado en lugar de la ruta interna /uploads/…). Los listados (mis
+ * tickets, disponibles, aceptados) devolvían los adjuntos tal como están en la
+ * base, con una URL que el navegador no puede abrir.
+ */
+export function withSerializedAttachments<T extends { id: string; attachments?: AttachmentPayload[] | null }>(
+  ticket: T
+): T {
+  if (!Array.isArray(ticket.attachments)) return ticket;
+  return { ...ticket, attachments: ticket.attachments.map((a) => serializeAttachment(ticket.id, a)) };
+}

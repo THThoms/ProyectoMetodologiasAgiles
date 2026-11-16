@@ -21,6 +21,7 @@
 #   · ningún VALOR secreto de los .env locales aparece en el contenido
 #   · ninguna referencia de runtime a PostgreSQL en deploy/ y scripts/
 #   · ninguna ruta interna, IP pública, contraseña demo ni cuenta institucional real
+#   · ningún archivo de texto con fin de línea CRLF (el servidor es Linux)
 # =============================================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -117,6 +118,21 @@ echo "  ✔ sin auditorías, pruebas, cuentas demo, IP públicas ni cuentas real
 pg="$(grep -rIniE --exclude=build-server-package.sh 'postgres|5432|pg_dump' "$STAGE/deploy" "$STAGE/scripts" | grep -viE '^[^:]+:[0-9]+:\s*#|PostgreSQL (fue|está) retirado|no (usa|requiere|instala) PostgreSQL|sin PostgreSQL|PostgreSQL retirado' || true)"
 [ -z "$pg" ] || { echo "✘ Referencias de runtime a PostgreSQL:"; echo "$pg"; exit 1; }
 echo "  ✔ deploy/ y scripts/ sin dependencias de PostgreSQL"
+
+# Fase Y: el RC3 se generó desde una carpeta de trabajo de Windows y su
+# smoke-server.sh llevaba CRLF, que falla en Ubuntu. Ningún archivo de texto del
+# paquete puede contener un retorno de carro.
+# -U y el CR en una variable: en Git Bash, grep descarta los CR al leer y un
+# $'\r' escrito como argumento coincide con todo. En Linux -U no tiene efecto.
+cr="$(printf '\r')"
+crlf="$(grep -rIlU -e "$cr" "$STAGE" || true)"
+if [ -n "$crlf" ]; then
+  echo "✘ Archivos con fin de línea CRLF (el servidor es Linux):"
+  echo "$crlf" | sed "s#^$STAGE/##"
+  echo "  Corrige la carpeta de trabajo (.gitattributes fuerza LF) o empaqueta desde un clon con core.autocrlf=false."
+  exit 1
+fi
+echo "  ✔ sin fines de línea CRLF"
 chmod +x "$STAGE"/scripts/*.sh "$STAGE"/scripts/*/*.sh "$STAGE"/deploy/server/mssql-init/init.sh 2>/dev/null || true
 
 echo "==> Manifest"

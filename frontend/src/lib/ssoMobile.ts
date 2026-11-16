@@ -10,14 +10,15 @@
 //      con `Browser.open()`, indicando al backend `?client=android`.
 //   2. El backend lo pasa por el parámetro `state` OAuth.
 //   3. Tras autenticar, el backend redirige a
-//      `ec.uta.servicedesk://auth/success?token=…`
+//      `ec.uta.servicedesk://auth/success?code=…` (código de un solo uso)
 //   4. Android intercepta el scheme y despierta la MainActivity.
 //   5. Capacitor emite `appUrlOpen` con la URL entera.
-//   6. `handleSsoAppUrl` extrae el token y persiste la sesión.
+//   6. La app canjea el código (con su verificador) y persiste la sesión.
 //
 // En web todo esto es no-op: el login sigue con full-page redirect como antes.
 
 import { Capacitor } from "@capacitor/core";
+import { beginSsoChallenge } from "./ssoPkce";
 
 export const MOBILE_DEEP_LINK_HOST = "ec.uta.servicedesk://auth";
 
@@ -36,6 +37,10 @@ export async function openMicrosoftSsoInSystemBrowser(
   const { Browser } = await import("@capacitor/browser");
   const qs = new URLSearchParams({ client: "android" });
   if (loginHint) qs.set("login_hint", loginHint);
+  // Reto del login: el código que vuelve por el enlace solo podrá canjearlo
+  // esta app (ver lib/ssoPkce.ts).
+  const challenge = await beginSsoChallenge(window.localStorage);
+  if (challenge) qs.set("cc", challenge);
   await Browser.open({
     url: `${apiBase}/api/auth/microsoft?${qs.toString()}`,
     windowName: "_self",

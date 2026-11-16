@@ -5,6 +5,7 @@ import morgan from "morgan";
 import { checkDatabase } from "./health/readiness";
 import authRoutes from "./routes/authRoutes";
 import { env } from "./config/env";
+import { httpErrorHandler, wrapAsync } from "./utils/asyncRoutes";
 
 export function createApp() {
   const app = express();
@@ -22,22 +23,34 @@ export function createApp() {
     })
   );
   app.use(cors());
-  app.use(express.json());
-  app.use(morgan("combined"));
+  // Los cuerpos de autenticación son pequeños: 32 kB basta y acota el abuso.
+  app.use(express.json({ limit: "32kb" }));
+  // El registro de accesos no guarda el código de autorización ni el `state`.
+  morgan.token("safe-url", (req) =>
+    ((req as express.Request).originalUrl ?? req.url ?? "").replace(
+      /([?&](?:code|state|token|id_token|access_token|client_info|session_state|cc)=)[^&#\s]*/gi,
+      "$1[REDACTADO]"
+    )
+  );
+  app.use(
+    morgan(
+      ':remote-addr - :remote-user [:date[clf]] ":method :safe-url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'
+    )
+  );
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", service: "auth-service" });
   });
 
   // Fase T — readiness (lo usa el healthcheck de Docker): base de datos real.
-  app.get("/health/ready", async (_req, res) => {
+  app.get("/health/ready", wrapAsync(async (_req, res) => {
     const db = await checkDatabase();
     res.status(db ? 200 : 503).json({
       status: db ? "ready" : "not_ready",
       service: "auth-service",
       checks: { database: db ? "ok" : "fail" },
     });
-  });
+  }));
 
   app.use("/auth", authRoutes);
 
@@ -45,12 +58,7 @@ export function createApp() {
     res.status(404).json({ error: "Endpoint no encontrado" });
   });
 
-  app.use(
-    (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      console.error(err);
-      res.status(500).json({ error: "Error interno del servidor" });
-    }
-  );
+  app.use(httpErrorHandler);
 
   return app;
 }

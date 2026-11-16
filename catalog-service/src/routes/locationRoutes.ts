@@ -9,20 +9,29 @@
 // La UI de creación de ticket consume el GET público; nunca hardcodea el
 // listado en el frontend.
 
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
+import { asyncSafe } from "../utils/asyncRoutes";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db/client";
 import { verifyJwt, requireRole } from "../middleware/verifyJwt";
 
-const router = Router();
+// asyncSafe: un error asíncrono de cualquier ruta llega al middleware de error.
+const router = asyncSafe(Router());
 
 const uuidParam = z.string().uuid({ message: "id debe ser un UUID válido" });
 
 // ---------------------------------------------------------------------------
 // GET /locations -> combobox del NuevoTicket + panel admin.
 // ---------------------------------------------------------------------------
-router.get("/", async (req: Request, res: Response) => {
+// `includeInactive=true` (ubicaciones dadas de baja) exige administrador; el
+// listado de activas sigue siendo público (formulario de nuevo ticket).
+const adminOnlyIfIncludeInactive = (req: Request, res: Response, next: NextFunction) =>
+  req.query.includeInactive === "true"
+    ? verifyJwt(req, res, () => requireRole("admin")(req, res, next))
+    : next();
+
+router.get("/", adminOnlyIfIncludeInactive, async (req: Request, res: Response) => {
   const includeInactive = req.query.includeInactive === "true";
   const where: Prisma.LocationWhereInput = includeInactive ? {} : { isActive: true };
   const locations = await prisma.location.findMany({

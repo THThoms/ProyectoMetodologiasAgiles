@@ -55,6 +55,18 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    # Política de contenido de la aplicación web (defensa ante XSS: el JWT vive
+    # en el almacenamiento del navegador). Solo se ejecutan los scripts propios;
+    # un script inyectado no se ejecuta ni puede enviar datos a otro origen.
+    #   · script-src-attr: único manejador en línea admitido, por su hash:
+    #     onerror="this.remove()" de los logotipos del reporte impreso
+    #     (frontend/src/lib/institutionalReport.ts). Si ese texto cambia, hay que
+    #     recalcular el hash:  printf '%s' 'this.remove()' | openssl dgst -sha256 -binary | base64
+    #   · style-src 'unsafe-inline': estilos en línea de React y del reporte.
+    #   · fonts.googleapis.com / fonts.gstatic.com: tipografía Inter.
+    #   · img-src blob:/data:: imágenes de tickets (descarga autenticada) y vistas previas.
+    #   · connect-src 'self': la API está en este mismo dominio (/api/).
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; script-src-attr 'unsafe-hashes' 'sha256-9f8ZK5epjuMsYtXFjPqrgJI0L4QOAUYmJdHtT+RSH/c='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://res.cloudinary.com; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
     server_tokens off;
 
     # Adjuntos: hasta 5 imágenes de 5 MB por ticket (+ margen multipart).
@@ -78,11 +90,17 @@ server {
     send_timeout          60s;
     keepalive_timeout     65s;
 
-    location = /api/auth/login {
+    # Sin distinguir mayúsculas y con barra final opcional: Express acepta
+    # /API/AUTH/LOGIN y /api/auth/login/, y con "location =" esas variantes
+    # esquivaban este límite (el backend mantiene además su propio limitador).
+    location ~* ^/api/auth/login/?$ {
         limit_req zone=sd_login burst=5 nodelay;
         limit_req_status 429;
         proxy_pass http://servicedesk_gateway;
     }
+
+    # Rutas internas entre microservicios: nunca se publican.
+    location ~* ^/(api/)?auth/internal(/|$) { return 404; }
 
     location /api/ {
         proxy_pass http://servicedesk_gateway;

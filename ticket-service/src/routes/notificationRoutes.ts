@@ -9,15 +9,18 @@
 // tiempo; la reasociación es idempotente por `token` único.
 
 import { Router, Request, Response } from "express";
+import { asyncSafe } from "../utils/asyncRoutes";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db/client";
 import { verifyJwt } from "../middleware/verifyJwt";
 
-const router = Router();
+// asyncSafe: un error asíncrono de cualquier ruta llega al middleware de error.
+const router = asyncSafe(Router());
 
 const registerSchema = z.object({
-  token: z.string().trim().min(20, "token FCM demasiado corto").max(4096),
+  // device_tokens.token es NVARCHAR(512): un valor mayor terminaba en error 500.
+  token: z.string().trim().min(20, "token FCM demasiado corto").max(512, "token FCM demasiado largo"),
   platform: z.enum(["android", "ios", "web"]),
   deviceId: z.string().trim().max(200).optional(),
   appVersion: z.string().trim().max(50).optional(),
@@ -68,7 +71,7 @@ router.post("/register", verifyJwt, async (req: Request, res: Response) => {
 });
 
 const unregisterSchema = z.object({
-  token: z.string().trim().min(20).max(4096),
+  token: z.string().trim().min(20).max(512),
 });
 
 router.post("/unregister", verifyJwt, async (req: Request, res: Response) => {

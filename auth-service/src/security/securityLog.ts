@@ -10,6 +10,7 @@ export type SecurityEvent =
   | "sso_code_issued"
   | "sso_code_rejected"
   | "sso_state_rejected"
+  | "sso_tenant_rejected"
   | "sso_exchange_success"
   | "insecure_login_blocked";
 

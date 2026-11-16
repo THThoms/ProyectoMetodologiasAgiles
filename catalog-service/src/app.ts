@@ -1,4 +1,5 @@
 import express from "express";
+import { httpErrorHandler, wrapAsync } from "./utils/asyncRoutes";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
@@ -20,14 +21,14 @@ export function createApp() {
   });
 
   // Fase T — readiness (lo usa el healthcheck de Docker): base de datos real.
-  app.get("/health/ready", async (_req, res) => {
+  app.get("/health/ready", wrapAsync(async (_req, res) => {
     const db = await checkDatabase();
     res.status(db ? 200 : 503).json({
       status: db ? "ready" : "not_ready",
       service: "catalog-service",
       checks: { database: db ? "ok" : "fail" },
     });
-  });
+  }));
 
   app.use("/services", serviceRoutes);
   app.use("/knowledge", knowledgeRoutes);
@@ -37,12 +38,7 @@ export function createApp() {
     res.status(404).json({ error: "Endpoint no encontrado" });
   });
 
-  app.use(
-    (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      console.error(err);
-      res.status(500).json({ error: "Error interno del servidor" });
-    }
-  );
+  app.use(httpErrorHandler);
 
   return app;
 }

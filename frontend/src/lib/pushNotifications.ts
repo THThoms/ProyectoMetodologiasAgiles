@@ -14,6 +14,7 @@
 import { Capacitor } from "@capacitor/core";
 import { api } from "./api";
 import { getToken as getJwt } from "./auth";
+import { deepLinkFor } from "./deepLink";
 
 type PlatformKind = "android" | "ios" | "web";
 
@@ -124,10 +125,8 @@ export async function initPushNotifications(opts: PushOptions): Promise<void> {
     await PushNotifications.addListener(
       "pushNotificationActionPerformed",
       (action) => {
-        const data = action.notification?.data ?? {};
-        const deepLink =
-          (data.deepLink as string | undefined) ??
-          (data.ticketId ? `/tickets/${data.ticketId}` : null);
+        // Solo rutas internas de la SPA (lib/deepLink.ts): nunca otro origen.
+        const deepLink = deepLinkFor(action.notification?.data as Record<string, unknown> | undefined);
         if (deepLink) opts.onNavigate(deepLink);
       }
     );

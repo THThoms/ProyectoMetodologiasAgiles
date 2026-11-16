@@ -245,3 +245,22 @@ describe("GET /tickets/history/:id - HU-09", () => {
 
 // PATCH /tickets/:id/status y GET /tickets/level: retirados en Fase R (410)
 // → ver legacyEndpointsGone.test.ts
+
+// Auditoría general: la etiqueta del estado `pendiente_validacion` existe. Un
+// evento STATUS_CHANGED hacia ese estado se describía con "undefined".
+import { describeEvent } from "../src/services/historyService";
+describe("describeEvent · estado pendiente_validacion", () => {
+  it("usa una etiqueta legible, nunca el valor interno ni undefined", () => {
+    const text = describeEvent({
+      action: "STATUS_CHANGED",
+      previousLevel: null,
+      newLevel: null,
+      previousStatus: "en_proceso",
+      newStatus: "pendiente_validacion",
+      reason: null,
+      performedByName: "Persona",
+    });
+    expect(text).toContain("Pendiente de validación");
+    expect(text).not.toMatch(/undefined|pendiente_validacion/);
+  });
+});

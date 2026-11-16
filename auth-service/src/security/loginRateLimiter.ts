@@ -19,6 +19,8 @@ export interface RateLimitConfig {
   maxFailuresPerAccount: number;
   baseCooldownMs: number;
   maxCooldownMs: number;
+  /** Tope de claves por mapa: la memoria no depende de cuántas cuentas/IP pruebe un atacante. */
+  maxEntries?: number;
 }
 
 export const DEFAULT_RATE_LIMIT: RateLimitConfig = {
@@ -27,7 +29,12 @@ export const DEFAULT_RATE_LIMIT: RateLimitConfig = {
   maxFailuresPerAccount: 5,
   baseCooldownMs: 60 * 1000,
   maxCooldownMs: 15 * 60 * 1000,
+  maxEntries: 20_000,
 };
+
+/** Longitud máxima de una clave (un correo válido no supera 254 caracteres). */
+const MAX_KEY_LENGTH = 320;
+const clampKey = (key: string): string => (key.length > MAX_KEY_LENGTH ? key.slice(0, MAX_KEY_LENGTH) : key);
 
 interface Entry {
   failures: number[];        // timestamps de fallos dentro de la ventana
@@ -50,9 +57,25 @@ export class LoginRateLimiter {
     private readonly now: () => number = () => Date.now()
   ) {}
 
-  private entry(map: Map<string, Entry>, key: string): Entry {
+  /** Entrada existente o nueva. Solo la usa recordFailure: consultar no reserva memoria. */
+  private entry(map: Map<string, Entry>, rawKey: string): Entry {
+    const key = clampKey(rawKey);
     let e = map.get(key);
     if (!e) {
+      const max = this.cfg.maxEntries ?? 20_000;
+      if (map.size >= max) {
+        this.sweep();
+        // Si sigue lleno, se descarta la entrada más antigua que no esté bloqueada.
+        if (map.size >= max) {
+          const t = this.now();
+          for (const [k, v] of map) {
+            if (v.lockedUntil <= t) {
+              map.delete(k);
+              break;
+            }
+          }
+        }
+      }
       e = { failures: [], lockedUntil: 0, lockLevel: 0 };
       map.set(key, e);
     }
@@ -61,16 +84,16 @@ export class LoginRateLimiter {
     return e;
   }
 
-  /** ¿Se permite intentar? (no registra nada) */
+  /** ¿Se permite intentar? No registra NI crea nada. */
   check(ip: string, account?: string): LimitDecision {
     const t = this.now();
-    const ipE = this.entry(this.ips, ip);
-    if (ipE.lockedUntil > t) {
+    const ipE = this.ips.get(clampKey(ip));
+    if (ipE && ipE.lockedUntil > t) {
       return { allowed: false, retryAfterSeconds: Math.ceil((ipE.lockedUntil - t) / 1000), scope: "ip" };
     }
     if (account) {
-      const acE = this.entry(this.accounts, account);
-      if (acE.lockedUntil > t) {
+      const acE = this.accounts.get(clampKey(account));
+      if (acE && acE.lockedUntil > t) {
         return { allowed: false, retryAfterSeconds: Math.ceil((acE.lockedUntil - t) / 1000), scope: "account" };
       }
     }
@@ -101,7 +124,12 @@ export class LoginRateLimiter {
 
   /** Login correcto: limpia el historial de la cuenta (no el de la IP). */
   recordSuccess(account: string): void {
-    this.accounts.delete(account);
+    this.accounts.delete(clampKey(account));
+  }
+
+  /** Nº de claves en memoria (diagnóstico y tests). */
+  size(): { ips: number; accounts: number } {
+    return { ips: this.ips.size, accounts: this.accounts.size };
   }
 
   /** Limpieza periódica de entradas sin actividad (evita crecimiento de memoria). */

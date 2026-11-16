@@ -3,14 +3,13 @@ import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import { checkDatabase, checkUploadsWritable } from "./health/readiness";
-import path from "path";
 import ticketRoutes from "./routes/ticketRoutes";
 import routingRoutes from "./routes/routingRoutes";
 import assignmentRoutes from "./routes/assignmentRoutes";
 import adminRoutes from "./routes/adminRoutes";
 import notificationRoutes from "./routes/notificationRoutes";
 import { env } from "./config/env";
-import { verifyJwt } from "./middleware/verifyJwt";
+import { httpErrorHandler, wrapAsync } from "./utils/asyncRoutes";
 
 export function createApp() {
   const app = express();
@@ -30,7 +29,7 @@ export function createApp() {
 
   // Fase T — readiness (lo usa el healthcheck de Docker): base de datos real y
   // volumen de imágenes escribible.
-  app.get("/health/ready", async (_req, res) => {
+  app.get("/health/ready", wrapAsync(async (_req, res) => {
     const [db, uploads] = await Promise.all([checkDatabase(), checkUploadsWritable(env.uploadDir)]);
     const ready = db && uploads;
     res.status(ready ? 200 : 503).json({
@@ -38,7 +37,7 @@ export function createApp() {
       service: "ticket-service",
       checks: { database: db ? "ok" : "fail", uploads: uploads ? "ok" : "fail" },
     });
-  });
+  }));
 
   // Sprint 2 (rev): los routers específicos (my/available/accept/accepted/escalate v2)
   // se montan ANTES del router genérico de tickets para que sus paths tengan
@@ -49,26 +48,16 @@ export function createApp() {
   app.use("/admin", adminRoutes);
   app.use("/notifications", notificationRoutes);
 
-  // Servir archivos adjuntos. Requiere JWT para no exponer imágenes públicamente.
-  app.use(
-    "/uploads",
-    verifyJwt,
-    express.static(path.resolve(env.uploadDir), {
-      fallthrough: false,
-      maxAge: "1h",
-    })
-  );
+  // /uploads NO se sirve como carpeta estática. Bastaba un JWT de CUALQUIER
+  // usuario y el nombre del archivo para leer la imagen de un ticket ajeno, sin
+  // comprobar el acceso al ticket. Las imágenes solo salen por
+  // GET /tickets/:id/attachments/:attachmentId, que aplica ticketAccess.
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Endpoint no encontrado" });
   });
 
-  app.use(
-    (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      console.error(err);
-      res.status(500).json({ error: "Error interno del servidor" });
-    }
-  );
+  app.use(httpErrorHandler);
 
   return app;
 }

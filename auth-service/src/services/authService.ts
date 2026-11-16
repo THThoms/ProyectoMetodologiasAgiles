@@ -12,6 +12,8 @@ import { hashPassword, verifyPassword, validatePasswordPolicy } from "../utils/p
 const DUMMY_BCRYPT_HASH = hashPassword("servicedesk-timing-equalizer-" + Date.now());
 
 export interface MicrosoftClaims {
+  /** Tenant que emitió el token. */
+  tid?: string;
   oid?: string;
   preferred_username?: string;
   email?: string;
@@ -24,6 +26,26 @@ export class DomainNotAllowedError extends Error {
     super(`El email ${email} no pertenece al dominio institucional @${env.allowedDomain}`);
     this.name = "DomainNotAllowedError";
   }
+}
+
+export class TenantNotAllowedError extends Error {
+  constructor() {
+    super("El token no fue emitido por el tenant institucional configurado");
+    this.name = "TenantNotAllowedError";
+  }
+}
+
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * El token debe venir del tenant configurado. Solo se compara cuando
+ * MICROSOFT_TENANT_ID es un identificador (GUID) y el token declara su tenant;
+ * un tenant configurado por nombre de dominio lo valida la propia autoridad.
+ */
+export function isExpectedTenant(tid: string | undefined): boolean {
+  const configured = env.microsoft.tenantId.trim().toLowerCase();
+  if (!GUID_RE.test(configured) || typeof tid !== "string" || tid === "") return true;
+  return tid.toLowerCase() === configured;
 }
 
 export class InvalidCredentialsError extends Error {
@@ -64,6 +86,9 @@ function isAdminEmail(email: string): boolean {
 // García ni ningún otro correo específico se resuelve aquí. Los seeds pueden
 // crear usuarios iniciales, pero el runtime lee siempre de la BD.
 export async function upsertUserFromMicrosoft(claims: MicrosoftClaims) {
+  if (!isExpectedTenant(claims.tid)) {
+    throw new TenantNotAllowedError();
+  }
   const email = extractEmail(claims);
   if (!email) {
     throw new Error("Microsoft no devolvió un email válido");

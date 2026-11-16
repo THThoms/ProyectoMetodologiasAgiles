@@ -15,7 +15,8 @@ export type EmailEventType =
   | "TICKET_ASSIGNED"
   | "TICKET_ESCALATED"
   | "TICKET_RESOLVED"
-  | "TICKET_CONTRIBUTION";
+  | "TICKET_CONTRIBUTION"
+  | "TICKET_VALIDATION_REMINDER";
 
 export interface EmailTemplate {
   subject: string;
@@ -46,6 +47,9 @@ const STATUS_LABEL: Record<string, string> = {
   abierto: "Pendiente",
   en_proceso: "En Proceso",
   escalado: "Escalado",
+  // El correo "solución lista" se envía con el ticket en este estado: sin la
+  // etiqueta, el solicitante leía el valor interno "pendiente_validacion".
+  pendiente_validacion: "Pendiente de validación",
   resuelto: "Resuelto",
   cerrado: "Cerrado",
 };
@@ -280,11 +284,40 @@ Puedes revisar el seguimiento en ServiceDesk: ${env.frontendUrl}
   return { subject, textBody: text, htmlBody: html };
 }
 
+function ticketValidationReminder(ctx: TicketEmailContext): EmailTemplate {
+  const subject = `Recordatorio: tu ticket ${ctx.number} espera tu validación`;
+  const rows: Array<[string, string]> = [
+    ["Número de ticket", ctx.number],
+    ["Servicio", ctx.serviceName ?? "—"],
+    ["Estado actual", publicStatus(ctx.status ?? "pendiente_validacion")],
+    ["Solución registrada el", fmtDate(ctx.eventDate)],
+    ["Técnico responsable", publicTechnicianName(ctx.technicianName)],
+  ];
+  if (ctx.knowledgeTitle) rows.push(["Solución aplicada", ctx.knowledgeTitle]);
+  const text = `${greet(ctx.userName)}
+
+El personal técnico registró una solución para tu ticket ${ctx.number} y todavía no la has validado. Entra en ServiceDesk, revisa la solución y acéptala o recházala indicando el motivo. El ticket permanece abierto hasta que decidas.
+
+${rowsText(rows)}
+
+Puedes revisar el seguimiento en ServiceDesk: ${env.frontendUrl}
+`;
+  const html = wrapHtml(
+    subject,
+    `<p>${esc(greet(ctx.userName))}</p>
+     <p>El personal técnico registró una solución para tu ticket <strong>${esc(ctx.number)}</strong> y todavía no la has validado. Entra en ServiceDesk, revisa la solución y <strong>acéptala o recházala</strong> indicando el motivo. El ticket permanece abierto hasta que decidas.</p>
+     ${rowsHtml(rows)}`
+  );
+  return { subject, textBody: text, htmlBody: html };
+}
+
 export function buildEmailTemplate(
   eventType: EmailEventType,
   ctx: TicketEmailContext
 ): EmailTemplate {
   switch (eventType) {
+    case "TICKET_VALIDATION_REMINDER":
+      return ticketValidationReminder(ctx);
     case "TICKET_ACCEPTED":
       return ticketAccepted(ctx);
     case "TICKET_ASSIGNED":

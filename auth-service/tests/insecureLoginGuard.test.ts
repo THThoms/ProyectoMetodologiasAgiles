@@ -6,6 +6,11 @@
 import request from "supertest";
 import type { Express } from "express";
 
+// Cada prueba vuelve a cargar la aplicación completa (jest.isolateModules) y el
+// arranque calcula un hash bcrypt de 12 rondas: con varias suites en paralelo
+// superaba los 5 s por defecto y la prueba fallaba por tiempo, no por lógica.
+jest.setTimeout(30_000);
+
 const mockUserFindUnique = jest.fn();
 const mockUserUpdate = jest.fn();
 const mockUserCreate = jest.fn();

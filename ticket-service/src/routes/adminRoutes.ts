@@ -6,6 +6,7 @@
 //   GET  /admin/tickets/history      -> Historial general con filtros + paginación.
 //
 import { Router, Request, Response } from "express";
+import { asyncSafe, requireUuidParams } from "../utils/asyncRoutes";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 // Sprint B: enums migrados a src/domain/enums.ts.
@@ -26,7 +27,10 @@ import { dispatchPushInBackground } from "../services/fcmService";
 import { buildTechnicianReport } from "../services/technicianReportService";
 import { buildBlockReport } from "../services/blockReportService";
 
-const router = Router();
+// asyncSafe: un error asíncrono de cualquier ruta llega al middleware de error.
+const router = asyncSafe(Router());
+// Un id que no es UUID nunca llega a SQL Server (400 en vez de un error del motor).
+requireUuidParams(router, "id");
 
 function requireAdmin(req: Request, res: Response, next: () => void) {
   if (req.user?.role !== "admin") {
@@ -52,8 +56,16 @@ router.post("/tickets/:id/assign", verifyJwt, requireAdmin, async (req: Request,
 
   const ticket = await prisma.ticket.findUnique({ where: { id: req.params.id } });
   if (!ticket) return res.status(404).json({ error: "Ticket no encontrado" });
-  if (ticket.status === "cerrado") {
-    return res.status(409).json({ error: "No se puede asignar un ticket cerrado" });
+  if (ticket.status === TicketStatus.cerrado || ticket.status === TicketStatus.resuelto) {
+    return res.status(409).json({ error: `No se puede asignar un ticket ${ticket.status}` });
+  }
+  // Con una solución enviada, la decisión es del solicitante (aceptar o
+  // rechazar). Reasignar aquí cambiaba al técnico responsable de esa solución
+  // sin que el solicitante decidiera (misma regla que el escalado).
+  if (ticket.status === TicketStatus.pendiente_validacion) {
+    return res.status(409).json({
+      error: "El ticket está pendiente de validación del solicitante y no puede reasignarse",
+    });
   }
 
   // Validar técnico contra auth_db (rol technician o dtic, del área del ticket).

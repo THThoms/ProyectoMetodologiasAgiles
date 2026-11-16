@@ -66,3 +66,46 @@ export function verifyOAuthState(state: unknown, cookieHeader: string | undefine
 export function clientFromState(state: unknown): OAuthClient {
   return typeof state === "string" && state.startsWith("android.") ? "android" : "web";
 }
+
+// -----------------------------------------------------------------------------
+// Reto del cliente Android (mismo principio que PKCE, RFC 7636).
+//
+// El inicio de sesión de la app termina en un enlace con esquema propio
+// (ec.uta.servicedesk://auth/success?code=…). Android no garantiza qué
+// aplicación recibe ese enlace: otra app instalada puede declarar el mismo
+// esquema, capturar el código de un solo uso y canjearlo. Para que el código
+// solo le sirva a quien inició el login:
+//   1. La app genera un verificador aleatorio y envía su SHA-256 (`cc`).
+//   2. El backend lo guarda en una cookie HttpOnly del navegador y, en el
+//      callback, lo asocia al código de un solo uso.
+//   3. El canje exige el verificador original; quien solo capturó el enlace no
+//      lo tiene.
+// Una app antigua que no envía `cc` sigue funcionando como antes.
+// -----------------------------------------------------------------------------
+export const OAUTH_CHALLENGE_COOKIE = "sd_oauth_cc";
+const CHALLENGE_RE = /^[A-Za-z0-9_-]{43}$/; // SHA-256 en base64url
+
+/** Reto válido o null (cualquier otro valor se ignora). */
+export function parseChallenge(value: unknown): string | null {
+  return typeof value === "string" && CHALLENGE_RE.test(value) ? value : null;
+}
+
+export function challengeCookie(challenge: string, secure: boolean): string {
+  return `${OAUTH_CHALLENGE_COOKIE}=${challenge}; ${cookieAttrs(secure, OAUTH_STATE_TTL_SECONDS)}`;
+}
+
+export function clearChallengeCookie(secure: boolean): string {
+  return `${OAUTH_CHALLENGE_COOKIE}=; ${cookieAttrs(secure, 0)}`;
+}
+
+export function readChallengeCookie(cookieHeader: string | undefined): string | null {
+  return parseChallenge(readCookie(cookieHeader, OAUTH_CHALLENGE_COOKIE));
+}
+
+/** ¿El verificador presentado corresponde al reto guardado? (tiempo constante) */
+export function verifierMatches(verifier: unknown, challenge: string): boolean {
+  if (typeof verifier !== "string" || verifier.length < 43 || verifier.length > 128) return false;
+  const computed = Buffer.from(crypto.createHash("sha256").update(verifier, "utf8").digest("base64url"));
+  const expected = Buffer.from(challenge);
+  return computed.length === expected.length && crypto.timingSafeEqual(computed, expected);
+}

@@ -1,12 +1,24 @@
 import { Router, Request, Response } from "express";
+import { asyncSafe, isUuid } from "../utils/asyncRoutes";
 import { getMsalClient, SCOPES } from "../config/msal.config";
 import { env } from "../config/env";
 import { verifyJwt, verifyJwtAllowPwdChange } from "../middleware/verifyJwt";
 import { loginLimiter } from "../security/loginRateLimiter";
 import { ssoCodes } from "../security/ssoCodeStore";
 import { logSecurity } from "../security/securityLog";
-import { issueOAuthState, verifyOAuthState, clearOAuthStateCookie, clientFromState } from "../security/oauthState";
-import { STAFF_ROLES as OFFICIAL_STAFF_ROLES, TECH_ROLES, TECH_BLOCKS, Role, normalizeRole, blockForRole } from "../domain/enums";
+import { verifyServiceToken } from "../security/serviceToken";
+import {
+  issueOAuthState,
+  verifyOAuthState,
+  clearOAuthStateCookie,
+  clientFromState,
+  parseChallenge,
+  challengeCookie,
+  clearChallengeCookie,
+  readChallengeCookie,
+  verifierMatches,
+} from "../security/oauthState";
+import { STAFF_ROLES as OFFICIAL_STAFF_ROLES, TECH_ROLES, TECH_BLOCKS, LEGACY_ROLE_MAP, Role, normalizeRole, blockForRole } from "../domain/enums";
 import {
   upsertUserFromMicrosoft,
   issueSession,
@@ -15,6 +27,7 @@ import {
   microsoftSimulatedLogin,
   logAccess,
   DomainNotAllowedError,
+  TenantNotAllowedError,
   InvalidCredentialsError,
   MicrosoftClaims,
   changePassword,
@@ -22,7 +35,11 @@ import {
 } from "../services/authService";
 import { prisma } from "../db/client";
 
-const router = Router();
+// asyncSafe: un error asíncrono de cualquier ruta llega al middleware de error.
+const router = asyncSafe(Router());
+// Un correo válido no supera 254 caracteres; bcrypt solo usa los primeros 72 bytes.
+const MAX_EMAIL_LENGTH = 254;
+const MAX_PASSWORD_LENGTH = 256;
 const TOO_MANY = "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +51,11 @@ router.post("/login", async (req: Request, res: Response) => {
 
   if (!correo || !password) {
     return res.status(400).json({ error: "Correo y contraseña son requeridos" });
+  }
+  // Entradas desproporcionadas se rechazan antes de limitar o de calcular bcrypt
+  // (mismo mensaje que una credencial incorrecta: no revela nada).
+  if (correo.length > MAX_EMAIL_LENGTH || password.length > MAX_PASSWORD_LENGTH) {
+    return res.status(401).json({ error: "Credenciales inválidas" });
   }
 
   // Fase R: limitación por IP y por cuenta (mismo mensaje exista o no la cuenta).
@@ -171,6 +193,9 @@ router.get("/microsoft", async (req: Request, res: Response) => {
     // navegador; el callback exige que coincidan (protección contra login CSRF).
     const client = typeof req.query.client === "string" && req.query.client === "android" ? "android" : "web";
     const { state, setCookie } = issueOAuthState(client, stateCookieSecure());
+    // Reto de la app Android (SHA-256 de su verificador): liga el código de un
+    // solo uso a quien inició el login. Ver security/oauthState.ts.
+    const challenge = client === "android" ? parseChallenge(req.query.cc) : null;
 
     const url = await getMsalClient().getAuthCodeUrl({
       scopes: SCOPES,
@@ -180,7 +205,12 @@ router.get("/microsoft", async (req: Request, res: Response) => {
       prompt: loginHint ? undefined : "select_account",
       state,
     });
-    res.setHeader("Set-Cookie", setCookie);
+    res.setHeader(
+      "Set-Cookie",
+      challenge
+        ? [setCookie, challengeCookie(challenge, stateCookieSecure())]
+        : [setCookie, clearChallengeCookie(stateCookieSecure())]
+    );
     return res.redirect(url);
   } catch (err) {
     console.error("Error generando URL de Microsoft:", err);
@@ -202,8 +232,11 @@ async function microsoftCallbackHandler(req: Request, res: Response) {
   // scheme desconocido si SSO no está configurado.
   const rawState = req.query.state;
   const errorBase = `${env.frontendUrl}/login`;
-  // Fase T: la cookie de estado es de un solo uso: se borra siempre.
-  res.setHeader("Set-Cookie", clearOAuthStateCookie(stateCookieSecure()));
+  // Fase T: las cookies de estado y de reto son de un solo uso: se borran siempre.
+  res.setHeader("Set-Cookie", [
+    clearOAuthStateCookie(stateCookieSecure()),
+    clearChallengeCookie(stateCookieSecure()),
+  ]);
 
   if (!env.ssoConfigured) {
     return res.redirect(`${errorBase}?error=sso_not_configured`);
@@ -240,7 +273,9 @@ async function microsoftCallbackHandler(req: Request, res: Response) {
 
     // Fase R: el JWT YA NO viaja en la URL. Se emite un código opaco de un
     // solo uso (60 s) que el cliente canjea con POST /auth/sso/exchange.
-    const ssoCode = ssoCodes.issue(user.id);
+    // En Android, el código queda ligado al reto que envió la app al empezar.
+    const challenge = client === "android" ? readChallengeCookie(req.headers.cookie) : null;
+    const ssoCode = ssoCodes.issue(user.id, challenge);
     logSecurity("sso_code_issued", { ip: req.ip, email: user.email });
 
     // Web: /auth/success?code=…  |  Android: ec.uta.servicedesk://auth/success?code=…
@@ -250,6 +285,10 @@ async function microsoftCallbackHandler(req: Request, res: Response) {
       return res.redirect(
         `${errorBase}?error=domain_not_allowed&domain=${env.allowedDomain}`
       );
+    }
+    if (err instanceof TenantNotAllowedError) {
+      logSecurity("sso_tenant_rejected", { ip: req.ip });
+      return res.redirect(`${errorBase}?error=auth_failed`);
     }
     console.error("Error en callback Microsoft:", err);
     return res.redirect(`${errorBase}?error=auth_failed`);
@@ -275,6 +314,13 @@ router.post("/sso/exchange", async (req: Request, res: Response) => {
   if (!pending) {
     loginLimiter.recordFailure(ip);
     logSecurity("sso_code_rejected", { ip });
+    return res.status(400).json({ error: "Código de inicio de sesión inválido o caducado" });
+  }
+  // Código ligado a un reto (app Android): exige el verificador original. El
+  // código ya quedó consumido: un intento fallido obliga a repetir el login.
+  if (pending.challenge && !verifierMatches(req.body?.verifier, pending.challenge)) {
+    loginLimiter.recordFailure(ip);
+    logSecurity("sso_code_rejected", { ip, reason: "verifier" });
     return res.status(400).json({ error: "Código de inicio de sesión inválido o caducado" });
   }
   const user = await prisma.user.findUnique({ where: { id: pending.userId } });
@@ -315,6 +361,9 @@ router.post("/change-password", verifyJwtAllowPwdChange, async (req: Request, re
   const newPassword = String(req.body?.newPassword ?? "");
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: "Contraseña actual y nueva son requeridas" });
+  }
+  if (currentPassword.length > MAX_PASSWORD_LENGTH || newPassword.length > MAX_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: `La contraseña no puede superar ${MAX_PASSWORD_LENGTH} caracteres` });
   }
   try {
     const user = await changePassword(req.user!.userId, currentPassword, newPassword);
@@ -445,7 +494,9 @@ router.post("/users/lookup", verifyJwt, async (req: Request, res: Response) => {
   if (rawIds.length > 200) {
     return res.status(400).json({ error: "Máximo 200 ids por llamada" });
   }
-  const stringIds = rawIds.filter((x): x is string => typeof x === "string");
+  // Solo UUID: un valor que no lo es nunca llega a SQL Server (la conversión a
+  // uniqueidentifier fallaba y la petición completa terminaba en 500).
+  const stringIds = rawIds.filter((x): x is string => typeof x === "string" && isUuid(x));
   const uniqueIds: string[] = Array.from(new Set<string>(stringIds));
 
   const users = await prisma.user.findMany({
@@ -497,6 +548,27 @@ router.get("/technicians", verifyJwt, async (req: Request, res: Response) => {
     .filter((t) => !qRole || t.role === qRole)
     .filter((t) => !qBlock || (qBlock === "NONE" ? t.role === Role.technician && t.block === null : t.block === qBlock));
   return res.json({ technicians: rows });
+});
+
+// ---------------------------------------------------------------------------
+// GET /auth/internal/technicians -> directorio mínimo de personal técnico para
+// los avisos push de ticket-service. Solo con token de SERVICIO (ver
+// security/serviceToken.ts); el gateway no publica /auth/internal/*.
+// No devuelve nombres ni correos: id, rol, bloque.
+// ---------------------------------------------------------------------------
+router.get("/internal/technicians", verifyServiceToken, async (_req: Request, res: Response) => {
+  const technicians = await prisma.user.findMany({
+    where: { role: { in: [...TECH_ROLES, ...Object.keys(LEGACY_ROLE_MAP)] } },
+    select: { id: true, role: true, block: true },
+  });
+  return res.json({
+    technicians: technicians.map((t) => ({
+      id: t.id,
+      role: normalizeRole(t.role),
+      block: blockForRole(t.role, t.block),
+      isActive: true,
+    })),
+  });
 });
 
 // ---------------------------------------------------------------------------

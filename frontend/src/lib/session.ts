@@ -19,8 +19,12 @@ export function completeLogin(token: string, provider: AuthProvider): string | n
 }
 
 /** Canjea el código SSO de un solo uso. Lanza si es inválido o caducó. */
-export async function exchangeSsoCode(code: string): Promise<string> {
-  const res = await api.post<{ token: string }>("/api/auth/sso/exchange", { code });
+export async function exchangeSsoCode(code: string, verifier?: string): Promise<string> {
+  // `verifier`: solo en la app Android (lib/ssoPkce.ts); en web no existe.
+  const res = await api.post<{ token: string }>(
+    "/api/auth/sso/exchange",
+    verifier ? { code, verifier } : { code }
+  );
   const next = completeLogin(res.data.token, "microsoft");
   if (!next) throw new Error("auth_failed");
   return next;

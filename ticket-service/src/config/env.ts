@@ -19,10 +19,32 @@ const emailSendMode = (process.env.EMAIL_SEND_MODE ?? "log").toLowerCase();
 const emailNotificationsEnabled =
   (process.env.EMAIL_NOTIFICATIONS_ENABLED ?? "true").toLowerCase() !== "false";
 
+/**
+ * ¿Exigir STARTTLS? Por defecto sí cuando hay usuario y contraseña (nunca se
+ * envían credenciales en claro). No aplica con TLS implícito (SMTP_SECURE=true).
+ * SMTP_REQUIRE_TLS=true|false lo fija; vacío = valor por defecto.
+ */
+function smtpRequireTls(): boolean {
+  if ((process.env.SMTP_SECURE ?? "false").trim().toLowerCase() === "true") return false;
+  const explicit = (process.env.SMTP_REQUIRE_TLS ?? "").trim().toLowerCase();
+  if (explicit === "true") return true;
+  if (explicit === "false") return false;
+  return Boolean((process.env.SMTP_USER ?? "").trim() && (process.env.SMTP_PASS ?? "").trim());
+}
+
+/** En producción el secreto que valida las sesiones debe tener al menos 32 caracteres. */
+function jwtSecret(): string {
+  const secret = required("JWT_SECRET", process.env.JWT_SECRET);
+  if ((process.env.NODE_ENV ?? "development") === "production" && secret.length < 32) {
+    throw new Error("JWT_SECRET debe tener al menos 32 caracteres en producción");
+  }
+  return secret;
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 3003),
-  jwtSecret: required("JWT_SECRET", process.env.JWT_SECRET),
+  jwtSecret: jwtSecret(),
   catalogServiceUrl: required("CATALOG_SERVICE_URL", process.env.CATALOG_SERVICE_URL),
   authServiceUrl: process.env.AUTH_SERVICE_URL ?? "http://auth-service:3001",
   uploadDir: process.env.UPLOAD_DIR ?? path.resolve(process.cwd(), "uploads"),
@@ -40,6 +62,10 @@ export const env = {
     enabled: emailNotificationsEnabled,
     // "log" | "mock" | "smtp"
     sendMode: emailSendMode as "log" | "mock" | "smtp",
+    // Trabajador automático del outbox: cada N segundos reintenta pending/failed
+    // con backoff (5 min, 30 min) y como mucho 3 intentos. 0 = desactivado
+    // (solo el reintento manual del administrador).
+    workerIntervalSec: Math.max(0, Number(process.env.EMAIL_OUTBOX_WORKER_INTERVAL_SEC ?? 60) || 0),
     from: process.env.SMTP_FROM ?? "ServiceDesk UTA <no-reply@uta.edu.ec>",
     smtp: {
       host: process.env.SMTP_HOST ?? "",
@@ -47,7 +73,19 @@ export const env = {
       secure: (process.env.SMTP_SECURE ?? "false").toLowerCase() === "true",
       user: process.env.SMTP_USER ?? "",
       pass: process.env.SMTP_PASS ?? "",
+      // Por defecto se exige TLS siempre que haya credenciales y no se use ya
+      // TLS implícito (SMTP_SECURE=true, puerto 465).
+      requireTls: smtpRequireTls(),
     },
+  },
+
+  // Recordatorios al solicitante con una solución pendiente de validar.
+  //   VALIDATION_REMINDER_DAYS: días desde la resolución (y entre recordatorios)
+  //   antes de volver a avisar; 0 = desactivado. Nunca se cierra nada solo.
+  //   VALIDATION_REMINDER_INTERVAL_MIN: cada cuánto se revisa (por defecto 60).
+  validationReminder: {
+    days: Math.max(0, Number(process.env.VALIDATION_REMINDER_DAYS ?? 3) || 0),
+    intervalMin: Math.max(1, Number(process.env.VALIDATION_REMINDER_INTERVAL_MIN ?? 60) || 60),
   },
 
   // Almacenamiento de imágenes adjuntas.

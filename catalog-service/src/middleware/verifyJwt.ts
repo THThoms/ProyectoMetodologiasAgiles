@@ -29,7 +29,13 @@ declare module "express-serve-static-core" {
 }
 
 // Introspección de sesión contra auth-service (ver ticket-service/verifyJwt).
-const CACHE_TTL_MS = Number(process.env.SESSION_CACHE_TTL_MS ?? 30_000);
+// Ventana de revocación: una sesión VÁLIDA se recuerda solo 5 s (antes 30 s):
+// tras un logout, un token robado deja de servir aquí en ≤ 5 s. Con un usuario
+// activo esto supone como mucho una consulta a auth-service cada 5 s por token
+// (una búsqueda por hash indexada), no una por petición. Una sesión RECHAZADA
+// se recuerda 60 s: un token revocado nunca vuelve a ser válido.
+const positiveTtlMs = () => Number(process.env.SESSION_CACHE_TTL_MS ?? 5_000);
+const negativeTtlMs = () => Number(process.env.SESSION_CACHE_NEGATIVE_TTL_MS ?? 60_000);
 const cache = new Map<string, { ok: boolean; until: number }>();
 const introspectionEnabled = () =>
   (process.env.AUTH_INTROSPECTION ?? (env.nodeEnv === "production" ? "true" : "false")).toLowerCase() === "true";
@@ -48,7 +54,7 @@ async function sessionIsActive(token: string): Promise<boolean | "unavailable"> 
     if (r.status >= 500) return "unavailable";
     const ok = r.status === 200;
     if (cache.size > 5000) cache.clear();
-    cache.set(key, { ok, until: now + CACHE_TTL_MS });
+    cache.set(key, { ok, until: now + (ok ? positiveTtlMs() : negativeTtlMs()) });
     return ok;
   } catch {
     return "unavailable";
@@ -63,8 +69,14 @@ export async function verifyJwt(req: Request, res: Response, next: NextFunction)
   const token = header.slice("Bearer ".length).trim();
   let payload: AuthUser;
   try {
-    payload = jwt.verify(token, env.jwtSecret) as AuthUser;
+    // Algoritmo fijado: el secreto compartido solo firma HS256.
+    payload = jwt.verify(token, env.jwtSecret, { algorithms: ["HS256"] }) as AuthUser;
   } catch {
+    return res.status(401).json({ error: "Token inválido o expirado" });
+  }
+  // Solo tokens de USUARIO: los tokens internos entre servicios (audiencia
+  // propia, sin userId) nunca sirven como sesión de una persona.
+  if (typeof payload.userId !== "string" || payload.userId === "" || (payload as { aud?: unknown }).aud !== undefined) {
     return res.status(401).json({ error: "Token inválido o expirado" });
   }
   if (payload.pwdChange) {

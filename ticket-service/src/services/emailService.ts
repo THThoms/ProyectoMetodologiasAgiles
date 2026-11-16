@@ -61,6 +61,10 @@ class SmtpTransport implements EmailTransport {
         host: env.email.smtp.host,
         port: env.email.smtp.port,
         secure: env.email.smtp.secure,
+        // Con usuario y contraseña, la conexión DEBE cifrarse: sin esto, un
+        // servidor (o un intermediario) que no anuncie STARTTLS recibía las
+        // credenciales en claro. SMTP_REQUIRE_TLS=false lo desactiva.
+        requireTLS: env.email.smtp.requireTls,
         auth:
           env.email.smtp.user && env.email.smtp.pass
             ? { user: env.email.smtp.user, pass: env.email.smtp.pass }

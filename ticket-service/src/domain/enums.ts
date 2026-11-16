@@ -64,6 +64,9 @@ export const EventAction = {
   // Sprint I · P4 — el solicitante valida la solución propuesta por el técnico.
   USER_ACCEPTED: "USER_ACCEPTED",
   USER_REJECTED_RESOLUTION: "USER_REJECTED_RESOLUTION",
+  // Recordatorio automático al solicitante (solución sin validar). Interno: no
+  // es una acción de una persona.
+  VALIDATION_REMINDER: "VALIDATION_REMINDER",
   CLOSED: "CLOSED",
 } as const;
 export type EventAction = string;

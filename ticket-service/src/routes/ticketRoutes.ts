@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from "express";
+import { asyncSafe, requireUuidParams } from "../utils/asyncRoutes";
 import fs from "fs";
 import { promises as fsPromises } from "fs";
 import path from "path";
@@ -16,10 +17,15 @@ import {
   InvalidLevelError,
 } from "../services/routingService";
 import { recordTicketEvent, describeEvent } from "../services/historyService";
-import { getStorageAdapter, StoredImage, serializeAttachment } from "../services/storageService";
+import {
+  getStorageAdapter,
+  StoredImage,
+  serializeAttachment,
+  withSerializedAttachments,
+} from "../services/storageService";
 import { detectImageType, readHead, EXT_BY_MIME } from "../services/imageType";
 import { dispatchPushInBackground } from "../services/fcmService";
-import { fetchTechnicians } from "../services/authClient";
+import { fetchTechnicianDirectory } from "../services/authClient";
 import { areasForRole, ticketAccess } from "../services/areaService";
 import { Prisma } from "@prisma/client";
 // Sprint B: enums migrados a src/domain/enums.ts.
@@ -29,7 +35,13 @@ import { env } from "../config/env";
 
 
 
-const router = Router();
+// asyncSafe: un error asíncrono de cualquier ruta llega al middleware de error.
+const router = asyncSafe(Router());
+// Un id que no es UUID nunca llega a SQL Server (400 en vez de un error del motor).
+requireUuidParams(router, "id", "attachmentId");
+
+/** Intentos de numeración ante creaciones simultáneas. */
+const MAX_NUMBER_ATTEMPTS = 5;
 
 const createSchema = z.object({
   serviceId: z.string().uuid({ message: "serviceId debe ser un UUID válido" }),
@@ -178,54 +190,65 @@ router.post(
     }
 
     try {
-      const number = await generateTicketNumber();
-      // HU-09: la creación del ticket y el evento CREATED se hacen en una
-      // sola transacción para garantizar trazabilidad atómica.
-      const ticket = await prisma.$transaction(async (tx) => {
-        const created = await tx.ticket.create({
-          data: {
-            number,
-            userId: req.user!.userId,
-            userName: req.user!.name,
-            userEmail: req.user!.email,
-            serviceId,
-            serviceName,
-            detail,
-            location: location || null,
-            levelAssigned: level,
-            responsibleArea,
-            assignmentStatus: "available",
-            ...(priority !== undefined ? { priority } : {}),
-            attachments: {
-              create: uploaded.map((u, i) => ({
-                imageUrl: u.imageUrl,
-                filePath: u.filePath ?? null,
-                storageProvider: u.storageProvider,
-                fileSize: files[i].size,
-                mimeType: files[i].mimetype,
-              })),
+      // El número es un correlativo del día calculado por conteo: dos tickets
+      // creados a la vez obtenían el mismo y uno fallaba por la clave única
+      // (el usuario veía "No se pudo crear el ticket"). Se reintenta con el
+      // siguiente número.
+      const createTicket = async (number: string) =>
+        prisma.$transaction(async (tx) => {
+          const created = await tx.ticket.create({
+            data: {
+              number,
+              userId: req.user!.userId,
+              userName: req.user!.name,
+              userEmail: req.user!.email,
+              serviceId,
+              serviceName,
+              detail,
+              location: location || null,
+              levelAssigned: level,
+              responsibleArea,
+              assignmentStatus: "available",
+              ...(priority !== undefined ? { priority } : {}),
+              attachments: {
+                create: uploaded.map((u, i) => ({
+                  imageUrl: u.imageUrl,
+                  filePath: u.filePath ?? null,
+                  storageProvider: u.storageProvider,
+                  fileSize: files[i].size,
+                  mimeType: files[i].mimetype,
+                })),
+              },
             },
-          },
-          include: { attachments: true },
+            include: { attachments: true },
+          });
+          await recordTicketEvent(tx, {
+            ticketId: created.id,
+            action: "CREATED",
+            title: "Ticket creado y disponible",
+            newLevel: created.levelAssigned,
+            newStatus: created.status,
+            newArea: created.responsibleArea,
+            performedBy: req.user!.userId,
+            performedByName: req.user!.name,
+          });
+          return created;
         });
-        await recordTicketEvent(tx, {
-          ticketId: created.id,
-          action: "CREATED",
-          title: "Ticket creado y disponible",
-          newLevel: created.levelAssigned,
-          newStatus: created.status,
-          newArea: created.responsibleArea,
-          performedBy: req.user!.userId,
-          performedByName: req.user!.name,
-        });
-        return created;
-      });
+      let ticket: Awaited<ReturnType<typeof createTicket>> | undefined;
+      for (let attempt = 1; !ticket; attempt++) {
+        try {
+          ticket = await createTicket(await generateTicketNumber());
+        } catch (err) {
+          const duplicatedNumber =
+            err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+          if (!duplicatedNumber || attempt >= MAX_NUMBER_ATTEMPTS) throw err;
+        }
+      }
 
       // Sprint 4+ · Push notification a los técnicos elegibles del área.
       // Fire-and-forget: nunca bloquea la respuesta al solicitante ni deshace
       // la creación del ticket si Firebase falla.
       void notifyTechniciansNewTicket({
-        userToken: (req.headers.authorization ?? "").slice("Bearer ".length).trim(),
         ticketId: ticket.id,
         ticketNumber: ticket.number,
         serviceName: ticket.serviceName ?? "Servicio",
@@ -233,7 +256,7 @@ router.post(
         priority: ticket.priority,
       });
 
-      return res.status(201).json({ ticket });
+      return res.status(201).json({ ticket: withSerializedAttachments(ticket) });
     } catch (err) {
       cleanupFiles(files);
       if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -247,7 +270,6 @@ router.post(
 // Sprint 4+ · Helper: identifica técnicos elegibles para un ticket recién
 // creado (o escalado a una nueva área) y dispara push a sus dispositivos.
 async function notifyTechniciansNewTicket(ctx: {
-  userToken: string;
   ticketId: string;
   ticketNumber: string;
   serviceName: string;
@@ -255,7 +277,8 @@ async function notifyTechniciansNewTicket(ctx: {
   priority: string;
 }): Promise<void> {
   try {
-    const technicians = await fetchTechnicians(ctx.userToken);
+    // Consulta de servicio a servicio: no depende del rol de quien crea el ticket.
+    const technicians = await fetchTechnicianDirectory();
     const eligibleIds = technicians
       .filter((t) => t.isActive && areasForRole(t.role).includes(ctx.area))
       .map((t) => t.id);

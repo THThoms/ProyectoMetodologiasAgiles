@@ -24,6 +24,7 @@ export function signAuthToken(payload: Omit<AuthTokenPayload, "iat" | "exp">): s
   // mismo usuario en el mismo segundo (antes eran idénticos y su hash chocaba
   // con el índice único de sessions → HTTP 500).
   const options: SignOptions = {
+    algorithm: "HS256",
     expiresIn: env.jwt.expiresIn as SignOptions["expiresIn"],
     jwtid: crypto.randomUUID(),
   };
@@ -32,7 +33,12 @@ export function signAuthToken(payload: Omit<AuthTokenPayload, "iat" | "exp">): s
 
 /** Verifica firma y expiración. El rol se normaliza (roles heredados → oficiales). */
 export function verifyAuthToken(token: string): AuthTokenPayload {
-  const payload = jwt.verify(token, env.jwt.secret) as AuthTokenPayload;
+  // Algoritmo fijado: el secreto solo firma HS256 (nunca "none" ni otra familia).
+  const payload = jwt.verify(token, env.jwt.secret, { algorithms: ["HS256"] }) as AuthTokenPayload;
+  // Los tokens internos entre servicios llevan audiencia y no representan a un usuario.
+  if (typeof payload.userId !== "string" || payload.userId === "" || payload.aud !== undefined) {
+    throw new Error("Token sin identidad de usuario");
+  }
   payload.role = normalizeRole(payload.role);
   return payload;
 }

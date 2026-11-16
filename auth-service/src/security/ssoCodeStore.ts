@@ -17,6 +17,8 @@ export interface PendingSso {
   userId: string;
   authProvider: "microsoft";
   createdAt: number;
+  /** Reto del cliente (SHA-256 del verificador). Si existe, el canje exige el verificador. */
+  challenge?: string;
 }
 
 const sha256 = (s: string) => crypto.createHash("sha256").update(s, "utf8").digest("hex");
@@ -29,11 +31,17 @@ export class SsoCodeStore {
     private readonly now: () => number = () => Date.now()
   ) {}
 
-  issue(userId: string): string {
+  issue(userId: string, challenge?: string | null): string {
     this.sweep();
     const code = crypto.randomBytes(32).toString("base64url");
     const t = this.now();
-    this.pending.set(sha256(code), { userId, authProvider: "microsoft", createdAt: t, expiresAt: t + this.ttlMs });
+    this.pending.set(sha256(code), {
+      userId,
+      authProvider: "microsoft",
+      createdAt: t,
+      expiresAt: t + this.ttlMs,
+      ...(challenge ? { challenge } : {}),
+    });
     return code;
   }
 
@@ -44,7 +52,12 @@ export class SsoCodeStore {
     const entry = this.pending.get(key);
     this.pending.delete(key);
     if (!entry || entry.expiresAt < this.now()) return null;
-    return { userId: entry.userId, authProvider: entry.authProvider, createdAt: entry.createdAt };
+    return {
+      userId: entry.userId,
+      authProvider: entry.authProvider,
+      createdAt: entry.createdAt,
+      ...(entry.challenge ? { challenge: entry.challenge } : {}),
+    };
   }
 
   sweep(): void {

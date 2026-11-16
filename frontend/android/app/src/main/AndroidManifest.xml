@@ -2,7 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -24,7 +25,8 @@
 
             <!--
               Sprint 4+ · Deep-link para el callback de Microsoft SSO.
-              El backend redirige a ec.uta.servicedesk://auth/success?token=…
+              El backend redirige a ec.uta.servicedesk://auth/success?code=… (código
+              de un solo uso ligado al verificador de la app; nunca el JWT)
               tras autenticar; Android despierta MainActivity con este intent y
               Capacitor emite el evento `appUrlOpen` en la SPA.
             -->

@@ -1,6 +1,7 @@
 // Cliente HTTP hacia auth-service. HU-07 lo usa para resolver userId -> {name,email}
 // en el panel técnico. Comunicación interna por la red Docker.
 import axios from "axios";
+import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 
 export interface AuthUserLite {
@@ -51,5 +52,36 @@ export async function fetchTechnicians(userToken: string, opts: { block?: string
     params: opts.block ? { block: opts.block } : undefined,
     timeout: 5000,
   });
+  return response.data.technicians ?? [];
+}
+
+// -----------------------------------------------------------------------------
+// Directorio de personal técnico para los avisos push.
+//
+// Lo consulta el SERVICIO, no la persona que crea o escala el ticket: antes se
+// reenviaba su JWT a GET /auth/technicians (solo administradores) y con un
+// solicitante o un técnico respondía 403, así que el aviso nunca salía.
+// Token interno de 60 s, con audiencia propia y sin userId: no vale como sesión.
+// -----------------------------------------------------------------------------
+export interface TechnicianDirectoryEntry {
+  id: string;
+  role: string;
+  block: string | null;
+  isActive: boolean;
+}
+
+export function signServiceToken(): string {
+  return jwt.sign({ typ: "service", svc: "ticket-service" }, env.jwtSecret, {
+    algorithm: "HS256",
+    audience: "servicedesk-internal",
+    expiresIn: 60,
+  });
+}
+
+export async function fetchTechnicianDirectory(): Promise<TechnicianDirectoryEntry[]> {
+  const response = await axios.get<{ technicians: TechnicianDirectoryEntry[] }>(
+    `${env.authServiceUrl}/auth/internal/technicians`,
+    { headers: { Authorization: `Bearer ${signServiceToken()}` }, timeout: 5000 }
+  );
   return response.data.technicians ?? [];
 }

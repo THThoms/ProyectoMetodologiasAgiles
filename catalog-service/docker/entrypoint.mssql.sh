@@ -17,5 +17,11 @@ if [ "${RUN_SEED:-true}" = "true" ]; then
 else
   echo "[catalog-mssql] RUN_SEED=false — seed omitido."
 fi
-echo "[catalog-mssql] Iniciando servicio Node..."
+echo "[catalog-mssql] Iniciando servicio Node como usuario sin privilegios (node)..."
+# Las tareas previas (db push, mantenimiento, seed) corren como root dentro del
+# contenedor; el proceso que atiende peticiones NO. Si el contenedor ya arranca
+# sin root (user: en compose), se ejecuta tal cual.
+if [ "$(id -u)" = "0" ]; then
+  exec env HOME=/home/node setpriv --reuid=node --regid=node --init-groups node dist/index.js
+fi
 exec node dist/index.js

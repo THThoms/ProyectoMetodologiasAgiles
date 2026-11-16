@@ -156,7 +156,13 @@ describe("POST /tickets/:id/resolve - existingKnowledge", () => {
     // Actualiza ticket con status=resuelto + vínculo KB
     expect(mockTicketUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: TICKET_ID },
+        // Escritura condicionada: solo si el ticket sigue en un estado abierto y
+        // con el mismo técnico (dos "resolver" simultáneos → el segundo falla).
+        where: {
+          id: TICKET_ID,
+          status: { notIn: ["resuelto", "cerrado", "pendiente_validacion"] },
+          assignedTechnicianId: TECH_ID,
+        },
         data: expect.objectContaining({
           status: "pendiente_validacion",
           resolvedById: TECH_ID,
@@ -183,6 +189,34 @@ describe("POST /tickets/:id/resolve - existingKnowledge", () => {
       })
     );
     expect(res.body.knowledge).toMatchObject({ id: KB_ID, mode: "existingKnowledge" });
+  });
+
+  it("409 si otra operación cambió el ticket mientras se resolvía (P2025)", async () => {
+    mockTicket();
+    (fetchKnowledgeById as jest.Mock).mockResolvedValue({
+      id: KB_ID,
+      title: "Error de conexión VPN institucional",
+      problemDescription: "x",
+      solution: "y",
+      keywords: ["vpn"],
+      service: null,
+    });
+    const { Prisma } = jest.requireActual("@prisma/client") as typeof import("@prisma/client");
+    mockTicketUpdate.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError("Record to update not found.", {
+        code: "P2025",
+        clientVersion: "5.22.0",
+      })
+    );
+    const token = makeToken("tech_n1", TECH_ID);
+    const res = await request(app)
+      .post(`/tickets/${TICKET_ID}/resolve`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ mode: "existingKnowledge", knowledgeArticleId: KB_ID });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/cambió de estado/);
+    // Sin evento RESOLVED: la transacción se abortó antes de registrar nada.
+    expect(mockEventCreate).not.toHaveBeenCalled();
   });
 
   it("404 si la solución no existe en catalog", async () => {

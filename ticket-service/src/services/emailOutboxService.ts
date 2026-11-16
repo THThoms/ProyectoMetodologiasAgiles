@@ -29,6 +29,16 @@ import { getEmailTransport, isValidEmail } from "./emailService";
 
 export const MAX_EMAIL_ATTEMPTS = 3;
 
+/**
+ * Espera mínima antes de reintentar según los intentos ya hechos (backoff):
+ * 0 intentos → inmediato · 1 → 5 min · 2 → 30 min. Con MAX_EMAIL_ATTEMPTS = 3
+ * un correo que falla tres veces queda `failed` y solo lo reintenta el admin.
+ */
+export const RETRY_BACKOFF_MS: readonly number[] = [0, 5 * 60_000, 30 * 60_000];
+export function retryBackoffMs(attempts: number): number {
+  return RETRY_BACKOFF_MS[Math.min(Math.max(attempts, 0), RETRY_BACKOFF_MS.length - 1)];
+}
+
 // Cliente Prisma reducido: permite tx o el global.
 type EmailOutboxClient = {
   emailOutbox: {
@@ -134,16 +144,29 @@ export async function dispatchEmail(outboxId: string): Promise<void> {
  * Reintenta correos pending/failed con attempts < MAX_EMAIL_ATTEMPTS.
  * Devuelve resumen { processed, sent, failed }.
  */
-export async function processPendingEmails(limit = 50): Promise<{
+export async function processPendingEmails(
+  limit = 50,
+  opts: { respectBackoff?: boolean; now?: Date } = {}
+): Promise<{
   processed: number;
   sent: number;
   failed: number;
 }> {
   if (!env.email.enabled) return { processed: 0, sent: 0, failed: 0 };
+  const now = opts.now ?? new Date();
+  // El trabajador automático respeta el backoff (no martillea un SMTP caído);
+  // el reintento manual del administrador (respectBackoff: false) no espera.
+  const backoffWhere: Prisma.EmailOutboxWhereInput[] = opts.respectBackoff
+    ? RETRY_BACKOFF_MS.map((ms, attempts) => ({
+        attempts,
+        updatedAt: { lte: new Date(now.getTime() - ms) },
+      }))
+    : [];
   const pendings = await prisma.emailOutbox.findMany({
     where: {
       status: { in: ["pending", "failed"] },
       attempts: { lt: MAX_EMAIL_ATTEMPTS },
+      ...(backoffWhere.length ? { OR: backoffWhere } : {}),
     },
     orderBy: { createdAt: "asc" },
     take: Math.min(Math.max(limit, 1), 200),
@@ -206,6 +229,9 @@ export async function notifyTicketEscalated(args: NotifyContext): Promise<string
 }
 export async function notifyTicketResolved(args: NotifyContext): Promise<string | null> {
   return notify("TICKET_RESOLVED", args);
+}
+export async function notifyTicketValidationReminder(args: NotifyContext): Promise<string | null> {
+  return notify("TICKET_VALIDATION_REMINDER", args);
 }
 export async function notifyTicketContribution(
   args: NotifyContext & { visibility?: "public" | "internal" }

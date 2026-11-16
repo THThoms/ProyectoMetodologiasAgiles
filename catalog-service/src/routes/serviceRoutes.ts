@@ -1,4 +1,5 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
+import { asyncSafe, requireUuidParams } from "../utils/asyncRoutes";
 import { z } from "zod";
 import { prisma } from "../db/client";
 import { Prisma } from "@prisma/client";
@@ -6,7 +7,10 @@ import { Prisma } from "@prisma/client";
 import { Level, ResponsibleArea } from "../domain/enums";
 import { verifyJwt, requireRole } from "../middleware/verifyJwt";
 
-const router = Router();
+// asyncSafe: un error asíncrono de cualquier ruta llega al middleware de error.
+const router = asyncSafe(Router());
+// Un id que no es UUID nunca llega a SQL Server (400 en vez de un error del motor).
+requireUuidParams(router, "id");
 
 const levelEnum = z.nativeEnum(Level);
 
@@ -45,7 +49,14 @@ const updateSchema = z.object({
 // GET /services -> Lista pública (combobox del formulario de tickets).
 // Solo devuelve servicios activos a no ser que ?includeInactive=true (admin).
 // ---------------------------------------------------------------------------
-router.get("/", async (req: Request, res: Response) => {
+// `includeInactive=true` (servicios dados de baja) es información administrativa:
+// exige un JWT de administrador. El listado de activos sigue siendo público.
+const adminOnlyIfIncludeInactive = (req: Request, res: Response, next: NextFunction) =>
+  req.query.includeInactive === "true"
+    ? verifyJwt(req, res, () => requireRole("admin")(req, res, next))
+    : next();
+
+router.get("/", adminOnlyIfIncludeInactive, async (req: Request, res: Response) => {
   const includeInactive = req.query.includeInactive === "true";
   const where: Prisma.ServiceWhereInput = includeInactive ? {} : { isActive: true };
   const services = await prisma.service.findMany({

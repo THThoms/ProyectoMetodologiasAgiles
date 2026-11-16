@@ -13,6 +13,7 @@
 // acción para garantizar trazabilidad atómica.
 
 import { Router, Request, Response } from "express";
+import { asyncSafe, requireUuidParams } from "../utils/asyncRoutes";
 import {
   AcceptanceDecision,
   acceptanceCode,
@@ -30,7 +31,8 @@ import { ResponsibleArea, EventVisibility, TicketStatus } from "../domain/enums"
 import { prisma } from "../db/client";
 import { verifyJwt } from "../middleware/verifyJwt";
 import { recordTicketEvent } from "../services/historyService";
-import { areasForRole, canHandleArea, isStaffRole } from "../services/areaService";
+import { withSerializedAttachments } from "../services/storageService";
+import { areasForRole, canHandleArea, isStaffRole, sameId } from "../services/areaService";
 import {
   fetchKnowledgeById,
   createKnowledgeArticle,
@@ -46,9 +48,12 @@ import {
   dispatchInBackground,
 } from "../services/emailOutboxService";
 import { dispatchPushInBackground } from "../services/fcmService";
-import { fetchTechnicians } from "../services/authClient";
+import { fetchTechnicianDirectory } from "../services/authClient";
 
-const router = Router();
+// asyncSafe: un error asíncrono de cualquier ruta llega al middleware de error.
+const router = asyncSafe(Router());
+// Un id que no es UUID nunca llega a SQL Server (400 en vez de un error del motor).
+requireUuidParams(router, "id");
 
 // ---------------------------------------------------------------------------
 // GET /tickets/my  -> Tickets del usuario autenticado (creador del ticket).
@@ -84,7 +89,7 @@ router.get("/my", verifyJwt, async (req: Request, res: Response) => {
   ]);
 
   return res.json({
-    tickets,
+    tickets: tickets.map(withSerializedAttachments),
     total,
     filters: { status: status ?? null, page: effectivePage, limit: effectiveLimit },
   });
@@ -122,7 +127,7 @@ router.get("/available", verifyJwt, async (req: Request, res: Response) => {
     prisma.ticket.count({ where }),
   ]);
 
-  return res.json({ tickets, total, areas });
+  return res.json({ tickets: tickets.map(withSerializedAttachments), total, areas });
 });
 
 // ---------------------------------------------------------------------------
@@ -255,7 +260,7 @@ router.get("/accepted", verifyJwt, async (req: Request, res: Response) => {
     orderBy: { acceptedAt: "desc" },
     include: { attachments: true },
   });
-  return res.json({ tickets, total: tickets.length });
+  return res.json({ tickets: tickets.map(withSerializedAttachments), total: tickets.length });
 });
 
 // ---------------------------------------------------------------------------
@@ -331,7 +336,7 @@ router.get("/my-assigned", verifyJwt, async (req: Request, res: Response) => {
   });
 
   return res.json({
-    tickets,
+    tickets: tickets.map(withSerializedAttachments),
     total: tickets.length,
     filters: {
       technicianId: targetTechnicianId,
@@ -345,9 +350,14 @@ router.get("/my-assigned", verifyJwt, async (req: Request, res: Response) => {
 // POST /tickets/:id/contributions -> Aportación del técnico al ticket.
 //   body: { description (>=5 chars trim), visibility?: "public"|"internal" }
 // ---------------------------------------------------------------------------
+/** Tope de los textos libres del flujo (aportación, motivo, trabajo realizado). */
+const MAX_TEXT = 5000;
+const tooLong = { message: `El texto no puede superar ${MAX_TEXT} caracteres` };
+
 const contributionSchema = z.object({
   description: z
     .string()
+    .max(MAX_TEXT, tooLong)
     .transform((s) => s.trim())
     .refine((s) => s.length >= 5, {
       message: "La aportación debe tener al menos 5 caracteres",
@@ -370,10 +380,17 @@ router.post("/:id/contributions", verifyJwt, async (req: Request, res: Response)
   if (!ticket) return res.status(404).json({ error: "Ticket no encontrado" });
 
   // Solo el técnico asignado o admin pueden aportar.
-  if (role !== "admin" && ticket.assignedTechnicianId !== req.user!.userId) {
+  if (role !== "admin" && !sameId(ticket.assignedTechnicianId, req.user!.userId)) {
     return res
       .status(403)
       .json({ error: "Solo puedes aportar a tickets asignados a ti" });
+  }
+  // Un ticket cerrado (o resuelto, estado final heredado) ya no admite trabajo:
+  // su historial y su constancia de aceptación quedan como están.
+  if (ticket.status === TicketStatus.cerrado || ticket.status === TicketStatus.resuelto) {
+    return res
+      .status(409)
+      .json({ error: `El ticket está ${ticket.status} y no admite nuevas aportaciones` });
   }
 
   const effectiveVisibility = visibility ?? "public";
@@ -414,18 +431,20 @@ router.post("/:id/contributions", verifyJwt, async (req: Request, res: Response)
 const escalateSchema = z.object({
   reason: z
     .string()
+    .max(MAX_TEXT, tooLong)
     .transform((s) => s.trim())
     .refine((s) => s.length >= 5, {
       message: "El motivo debe tener al menos 5 caracteres",
     }),
   workDone: z
     .string()
+    .max(MAX_TEXT, tooLong)
     .transform((s) => s.trim())
     .refine((s) => s.length >= 5, {
       message: "Debes describir qué se hizo antes de escalar (mínimo 5 caracteres)",
     }),
   targetArea: z.nativeEnum(ResponsibleArea).optional(),
-  description: z.string().optional(),
+  description: z.string().max(MAX_TEXT, tooLong).optional(),
 });
 
 router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
@@ -448,9 +467,16 @@ router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
       .status(409)
       .json({ error: `El ticket está ${ticket.status} y no puede escalarse` });
   }
-  if (role !== "admin" && ticket.assignedTechnicianId !== req.user!.userId) {
+  if (role !== "admin" && !sameId(ticket.assignedTechnicianId, req.user!.userId)) {
     return res.status(403).json({
       error: "Solo puedes escalar tickets asignados a ti",
+    });
+  }
+  // Con una solución enviada, la decisión es del solicitante (aceptar o
+  // rechazar). Escalar aquí la retiraba de su bandeja sin que decidiera.
+  if (ticket.status === TicketStatus.pendiente_validacion) {
+    return res.status(409).json({
+      error: "El ticket está pendiente de validación del solicitante y no puede escalarse",
     });
   }
 
@@ -465,7 +491,13 @@ router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
       // "escalado" en Mis Aceptados — el técnico anterior no podía moverlo
       // y ningún otro técnico del área lo veía como disponible.
       const u = await tx.ticket.update({
-        where: { id: req.params.id },
+        // Condicionada: si entre la lectura y la escritura el ticket se cerró,
+        // se envió a validación o cambió de técnico, no se pisa (P2025 → 409).
+        where: {
+          id: req.params.id,
+          status: { notIn: ["resuelto", "cerrado", "pendiente_validacion"] },
+          assignedTechnicianId: ticket.assignedTechnicianId,
+        },
         data: {
           status: "escalado",
           responsibleArea: newArea,
@@ -516,11 +548,11 @@ router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
     // a los técnicos elegibles de la nueva área (aunque no haya cambiado) —
     // ellos tienen el ticket "nuevo" en su bandeja.
     {
-      const userToken = (req.headers.authorization ?? "").slice("Bearer ".length).trim();
       const previousTechnicianId = ticket.assignedTechnicianId;
       void (async () => {
         try {
-          const techs = await fetchTechnicians(userToken);
+          // Consulta de servicio a servicio: no depende del rol de quien escala.
+          const techs = await fetchTechnicianDirectory();
           const eligibleIds = techs
             .filter((t) => t.isActive && areasForRole(t.role).includes(newArea))
             // No spamear al técnico que acaba de escalar.
@@ -557,6 +589,9 @@ router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
       },
     });
   } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return res.status(409).json({ error: "El ticket cambió de estado y ya no puede escalarse" });
+    }
     console.error("[escalate-v2] error:", err);
     return res.status(500).json({ error: "Error interno al escalar el ticket" });
   }
@@ -581,6 +616,9 @@ router.put("/:id/escalate", verifyJwt, async (req: Request, res: Response) => {
 //   - Emite evento `RESOLVED` (visibility=public) con el id de la solución y
 //     `workDone` con la solución aplicada, `description` con la nota final.
 // ---------------------------------------------------------------------------
+/** Tope de los textos de un artículo de la base de conocimiento. */
+const MAX_KB_TEXT = 20000;
+
 const existingKnowledgeSchema = z.object({
   mode: z.literal("existingKnowledge"),
   knowledgeArticleId: z
@@ -595,10 +633,11 @@ const newKnowledgeSchema = z.object({
   problemDescription: z
     .string()
     .trim()
-    .min(10, "La descripción del problema debe tener al menos 10 caracteres"),
-  solution: z.string().trim().min(10, "La solución debe tener al menos 10 caracteres"),
+    .min(10, "La descripción del problema debe tener al menos 10 caracteres")
+    .max(MAX_KB_TEXT),
+  solution: z.string().trim().min(10, "La solución debe tener al menos 10 caracteres").max(MAX_KB_TEXT),
   keywords: z
-    .array(z.string().trim().min(1))
+    .array(z.string().trim().min(1).max(80))
     .min(1, "Debes proporcionar al menos una palabra clave")
     .max(20),
   serviceId: z.string().uuid().optional(),
@@ -629,7 +668,7 @@ router.post("/:id/resolve", verifyJwt, async (req: Request, res: Response) => {
 
   // El técnico solo puede resolver tickets asignados a él. Admin puede cualquier
   // ticket que esté asignado (no permitimos resolver tickets sin técnico).
-  if (role !== "admin" && ticket.assignedTechnicianId !== req.user!.userId) {
+  if (role !== "admin" && !sameId(ticket.assignedTechnicianId, req.user!.userId)) {
     return res
       .status(403)
       .json({ error: "Solo puedes resolver tickets asignados a ti" });
@@ -699,7 +738,15 @@ router.post("/:id/resolve", verifyJwt, async (req: Request, res: Response) => {
   try {
     const { updated, outboxId } = await prisma.$transaction(async (tx) => {
       const u = await tx.ticket.update({
-        where: { id: req.params.id },
+        // Condicionada: si entre la lectura y la escritura otra resolución, un
+        // escalado o un cierre cambió el ticket, no se pisa (P2025 → 409). Sin
+        // esto, dos "resolver" simultáneos creaban dos eventos RESOLVED y dos
+        // artículos y el segundo sobrescribía al primero.
+        where: {
+          id: req.params.id,
+          status: { notIn: [TicketStatus.resuelto, TicketStatus.cerrado, TicketStatus.pendiente_validacion] },
+          assignedTechnicianId: ticket.assignedTechnicianId,
+        },
         data: {
           status: TicketStatus.pendiente_validacion,
           resolvedAt: new Date(),
@@ -766,6 +813,11 @@ router.post("/:id/resolve", verifyJwt, async (req: Request, res: Response) => {
       knowledge: { id: knowledgeArticleId, title: knowledgeTitle, mode: data.mode },
     });
   } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return res.status(409).json({
+        error: "El ticket cambió de estado mientras se resolvía (otra resolución, escalado o cierre) y no se registró esta solución",
+      });
+    }
     console.error("[resolve] error:", err);
     return res.status(500).json({ error: "Error interno al resolver el ticket" });
   }
@@ -920,6 +972,7 @@ const userRejectSchema = z.object({
   ...termsAckSchema,
   reason: z
     .string({ required_error: "Debes indicar por qué rechazas la solución" })
+    .max(MAX_TEXT, tooLong)
     .transform((s) => s.trim())
     .refine((s) => s.length >= 5, {
       message: "Debes indicar por qué la solución no te sirvió (mínimo 5 caracteres)",

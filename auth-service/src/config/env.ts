@@ -23,12 +23,29 @@ const azureClientSecret =
 const azureRedirectUri =
   optional(process.env.MICROSOFT_REDIRECT_URI) ?? optional(process.env.AZURE_AD_REDIRECT_URI);
 
-const ssoConfigured = Boolean(
-  azureClientId && azureTenantId && azureClientSecret && azureRedirectUri
+// El SSO exige un tenant CONCRETO. Con "common"/"organizations"/"consumers"
+// Microsoft acepta cuentas de CUALQUIER organización, y el correo que llega en
+// el token lo define el administrador de ese otro tenant: cualquiera podría
+// presentarse con un correo @institucional. En ese caso el SSO se desactiva.
+const MULTI_TENANT_AUTHORITIES = new Set(["common", "organizations", "consumers"]);
+const ssoTenantRejected = Boolean(
+  azureTenantId && MULTI_TENANT_AUTHORITIES.has(azureTenantId.trim().toLowerCase())
 );
+
+const ssoConfigured =
+  Boolean(azureClientId && azureTenantId && azureClientSecret && azureRedirectUri) && !ssoTenantRejected;
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
 const isProduction = nodeEnv === "production";
+
+/** En producción el secreto que firma las sesiones debe tener al menos 32 caracteres. */
+function jwtSecret(): string {
+  const secret = required("JWT_SECRET", process.env.JWT_SECRET);
+  if (isProduction && secret.length < 32) {
+    throw new Error("JWT_SECRET debe tener al menos 32 caracteres en producción");
+  }
+  return secret;
+}
 const flag = (name: string) => (process.env[name] ?? "false").trim().toLowerCase() === "true";
 
 export const env = {
@@ -37,13 +54,15 @@ export const env = {
   port: Number(process.env.PORT ?? 3001),
 
   jwt: {
-    secret: required("JWT_SECRET", process.env.JWT_SECRET),
+    secret: jwtSecret(),
     expiresIn: process.env.JWT_EXPIRES_IN ?? "8h",
   },
 
   // Microsoft Azure AD opcional: si las 4 variables están configuradas, /auth/microsoft funciona.
   // Si faltan, el endpoint responde 503 y el equipo puede usar /auth/dev-login.
   ssoConfigured,
+  /** true si MICROSOFT_TENANT_ID es multi-tenant: el SSO queda desactivado. */
+  ssoTenantRejected,
   microsoft: {
     clientId: azureClientId ?? "",
     tenantId: azureTenantId ?? "",

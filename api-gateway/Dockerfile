@@ -22,5 +22,8 @@ RUN npm install --omit=dev
 
 COPY --from=builder /app/dist ./dist
 
+# El gateway no escribe en disco ni necesita privilegios: corre como `node`.
+USER node
+
 EXPOSE 8080
 CMD ["node", "dist/index.js"]

@@ -18,6 +18,7 @@ import TicketDeepLink from "./pages/TicketDeepLink";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { getCurrentUser, landingRouteFor, STAFF_ROLES } from "./lib/auth";
 import { CHANGE_PASSWORD_ROUTE, exchangeSsoCode } from "./lib/session";
+import { takeSsoVerifier } from "./lib/ssoPkce";
 import CambiarContrasena from "./pages/CambiarContrasena";
 import { initPushNotifications } from "./lib/pushNotifications";
 import {
@@ -81,7 +82,9 @@ function SsoDeepLinkHandler() {
           navigate("/login?error=missing_code", { replace: true });
           return;
         }
-        exchangeSsoCode(code)
+        // El verificador guardado al abrir el navegador demuestra que este
+        // código lo pidió esta app (un solo uso: se borra al leerlo).
+        exchangeSsoCode(code, takeSsoVerifier(window.localStorage))
           .then((next) => navigate(next, { replace: true }))
           .catch(() => navigate("/login?error=auth_failed", { replace: true }));
       });

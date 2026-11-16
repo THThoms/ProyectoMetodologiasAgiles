@@ -5,6 +5,9 @@ import morgan from "morgan";
 import { createProxyMiddleware, Options } from "http-proxy-middleware";
 import { env } from "./config/env";
 import { checkUpstream } from "./health/readiness";
+import { redactUrl } from "./logging/redact";
+
+class CorsRejectedError extends Error {}
 
 export function createApp() {
   const app = express();
@@ -42,13 +45,26 @@ export function createApp() {
         // Requests sin Origin (curl, health checks, same-origin) → permitidas.
         if (!origin) return cb(null, true);
         if (allowedOrigins.has(origin)) return cb(null, true);
-        return cb(new Error(`CORS bloqueado: origin ${origin}`));
+        return cb(new CorsRejectedError());
       },
       credentials: true,
     })
   );
 
-  app.use(morgan("combined"));
+  // Origen no permitido → 403 JSON (antes: error genérico de Express, con la
+  // traza de pila fuera de producción).
+  app.use((err: Error, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof CorsRejectedError) return res.status(403).json({ error: "Origen no permitido" });
+    return next(err);
+  });
+
+  // Los registros nunca guardan el valor de `code`, `state` ni `token` de la URL.
+  morgan.token("safe-url", (req) => redactUrl((req as express.Request).originalUrl ?? req.url ?? ""));
+  app.use(
+    morgan(
+      ':remote-addr - :remote-user [:date[clf]] ":method :safe-url HTTP/:http-version" :status :res[content-length] ":referrer" ":user-agent"'
+    )
+  );
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", service: "api-gateway" });
@@ -87,19 +103,32 @@ export function createApp() {
     on: {
       proxyReq: (_proxyReq, req) => {
         // log estructurado para debugging cross-service
-        console.log(`[proxy] ${req.method} ${req.url}`);
+        console.log(`[proxy] ${req.method} ${redactUrl(req.url ?? "")}`);
+      },
+      // El gateway es la ÚNICA autoridad CORS. Los microservicios internos
+      // responden con `Access-Control-Allow-Origin: *` (cors() por defecto) y el
+      // proxy copiaba esas cabeceras encima de las del gateway: el navegador
+      // veía "*" junto a "Allow-Credentials: true" y la lista de orígenes
+      // permitidos no se aplicaba a las respuestas sin preflight.
+      proxyRes: (proxyRes) => {
+        for (const name of Object.keys(proxyRes.headers)) {
+          if (name.toLowerCase().startsWith("access-control-")) delete proxyRes.headers[name];
+        }
       },
       error: (err, _req, res) => {
+        // El detalle (host y puerto internos) queda en el log, no en la respuesta.
         console.error("[proxy] error:", err.message);
         if ("status" in res) {
-          (res as express.Response).status(502).json({
-            error: "Servicio no disponible",
-            detail: err.message,
-          });
+          (res as express.Response).status(502).json({ error: "Servicio no disponible" });
         }
       },
     },
   };
+
+  // Rutas internas entre microservicios (/auth/internal/*): nunca se publican.
+  app.use(["/api/auth/internal", "/auth/internal"], (_req, res) => {
+    res.status(404).json({ error: "Ruta no encontrada en el gateway" });
+  });
 
   app.use(
     "/api/auth",
