@@ -78,16 +78,18 @@ y la rechaza si es `Developer` o `Evaluation`.
 
 ## 4. Microsoft SSO (Entra ID)
 
-1. En el registro de la aplicación en Azure (lo hace quien administra el tenant; esta fase no modifica Azure), añade la *Redirect URI*:
-   `https://<PUBLIC_DOMAIN>/api/auth/microsoft/callback`
-2. Pon en `.env` las 4 variables `MICROSOFT_*`, con `MICROSOFT_REDIRECT_URI` exactamente igual a esa URL.
+Paso a paso con las pantallas de Azure, de dónde sale cada valor y los errores frecuentes: [INSTALACION_SERVIDOR_NUEVO.md §5.2](INSTALACION_SERVIDOR_NUEVO.md). Resumen:
+
+1. En el registro de la aplicación en Azure (lo hace quien administra el tenant o el propietario de la aplicación), plataforma **Web**, añade la *Redirect URI*:
+   `https://<PUBLIC_DOMAIN>/auth/callback` (recomendada, la misma convención que el VPS). También es válida `https://<PUBLIC_DOMAIN>/api/auth/microsoft/callback`; usa una sola.
+2. Pon en `.env` las 4 variables `MICROSOFT_*`, con `MICROSOFT_REDIRECT_URI` exactamente igual a esa URL, `MICROSOFT_TENANT_ID` con el GUID del tenant y `MICROSOFT_CLIENT_SECRET` con la columna **Valor** del secreto, entre comillas simples.
    Desde la Fase R el callback devuelve al navegador o a la app un **código de un solo uso** (`/auth/success?code=…`, 60 s), nunca el JWT. El código se canjea con `POST /api/auth/sso/exchange`. No hace falta ningún cambio en Azure por esto.
 3. Pon en `ADMIN_EMAILS` los correos que deben entrar como administradores.
 4. Android: el flujo usa el navegador del sistema y vuelve por `ec.uta.servicedesk://auth/success?code=…`. **El APK debe reconstruirse** con el frontend de la Fase R (el anterior esperaba `?token=`) y con `VITE_API_URL` apuntando al dominio nuevo.
 
 ## 5. Firebase (push Android)
 
-- `FCM_MODE=firebase` + `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL` y `FCM_PRIVATE_KEY` de un *service account* del proyecto `servicedesk-uta`.
+- `FCM_MODE=firebase` + `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL` y `FCM_PRIVATE_KEY` de un *service account* del proyecto `servicedesk-uta` (cómo obtenerla: [INSTALACION_SERVIDOR_NUEVO.md §5.4](INSTALACION_SERVIDOR_NUEVO.md)). Correo SMTP: §5.3 de la misma guía.
 - `FCM_PRIVATE_KEY` va entre comillas, con los saltos de línea escritos como `\n`.
 - **Nunca** subas el JSON del service account al servidor fuera de `.env`, ni al repositorio, ni al APK.
 

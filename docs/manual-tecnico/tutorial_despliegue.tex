@@ -1,0 +1,701 @@
+% =====================================================================
+%  Tutorial: subir ServiceDesk UTA y ponerlo en marcha en otro servidor
+%  Compilar:  latexmk -pdf tutorial_despliegue.tex
+%
+%  No contiene contraseñas, secretos, direcciones de servidores reales ni
+%  datos personales. Los valores entre <...> los sustituye cada instalación.
+% =====================================================================
+\documentclass[11pt,a4paper,oneside]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-noshorthands,es-tabla]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=2.6cm,right=2.4cm,headheight=14pt]{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt}
+\usepackage[table]{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+\usepackage{amssymb}
+\usepackage{pifont}
+\usepackage{xurl}
+\usepackage[hidelinks]{hyperref}
+\usepackage{bookmark}
+
+\definecolor{utaRojo}{HTML}{8B1A1A}
+\definecolor{gris}{HTML}{5A5A5A}
+\definecolor{grisClaro}{HTML}{F3F3F3}
+\definecolor{grisLinea}{HTML}{CFCFCF}
+\definecolor{azulNota}{HTML}{1F4E79}
+\definecolor{ambar}{HTML}{8A5A00}
+\definecolor{verde}{HTML}{2E6B30}
+
+\hypersetup{colorlinks=true,linkcolor=utaRojo,urlcolor=azulNota,
+  pdftitle={Tutorial de despliegue — ServiceDesk UTA},pdfauthor={Equipo ServiceDesk UTA}}
+
+\titleformat{\chapter}[hang]{\normalfont\huge\bfseries\color{utaRojo}}{\thechapter}{0.6em}{}
+\titlespacing*{\chapter}{0pt}{-10pt}{16pt}
+\titleformat{\section}{\normalfont\Large\bfseries\color{utaRojo}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries}{\thesubsection}{0.6em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{gris}ServiceDesk UTA · Tutorial de despliegue}
+\fancyhead[R]{\small\color{gris}\nouppercase{\leftmark}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+\lstdefinestyle{shell}{
+  basicstyle=\ttfamily\small, backgroundcolor=\color{grisClaro},
+  frame=single, rulecolor=\color{grisLinea}, framesep=4pt, xleftmargin=6pt, xrightmargin=6pt,
+  breaklines=true, postbreak=\mbox{\textcolor{gris}{$\hookrightarrow$}\space},
+  columns=fullflexible, keepspaces=true, showstringspaces=false,
+  literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1
+           {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1 {Ó}{{\'O}}1 {Ú}{{\'U}}1
+           {ñ}{{\~n}}1 {Ñ}{{\~N}}1 {·}{{\textperiodcentered}}1
+           {→}{{$\rightarrow$}}1 {…}{{\ldots}}1 {✔}{{\textcolor{verde}{$\checkmark$}}}1
+}
+\lstset{style=shell}
+
+\newcommand{\cod}[1]{\texttt{\small #1}}
+\DeclareUrlCommand\ruta{\def\UrlFont{\small\ttfamily}}
+\setlength{\emergencystretch}{3em}
+
+% Dónde se ejecuta cada bloque de comandos
+\newcommand{\donde}[1]{\par\smallskip\noindent{\small\sffamily\bfseries\color{white}\colorbox{utaRojo}{\,#1\,}}\par\nopagebreak\vspace{-2pt}}
+\newcommand{\equipo}{\donde{EN TU EQUIPO}}
+\newcommand{\servidor}{\donde{EN EL SERVIDOR}}
+
+\newtcolorbox{nota}[1][Nota]{colback=azulNota!5,colframe=azulNota,fonttitle=\bfseries,
+  title=#1,boxrule=0.6pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt}
+\newtcolorbox{aviso}[1][Importante]{colback=ambar!7,colframe=ambar,fonttitle=\bfseries,
+  title=#1,boxrule=0.6pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt}
+\newtcolorbox{esperado}{colback=verde!6,colframe=verde,boxrule=0.5pt,arc=2pt,
+  left=6pt,right=6pt,top=3pt,bottom=3pt,fontupper=\small}
+
+\renewcommand{\arraystretch}{1.25}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcommand{\cabecera}{\rowcolor{utaRojo!12}}
+\newcommand{\casilla}{$\square$\ }
+
+\setcounter{tocdepth}{1}
+
+\begin{document}
+
+% ---------------------------------------------------------------------
+\begin{titlepage}
+  \centering
+  \vspace*{2.5cm}
+  {\color{utaRojo}\rule{\linewidth}{1.2pt}}\\[14pt]
+  {\Huge\bfseries ServiceDesk UTA\par}
+  \vspace{8pt}
+  {\LARGE Tutorial de despliegue\par}
+  \vspace{4pt}
+  {\large Subir el sistema y ponerlo en marcha en otro servidor\par}
+  \vspace{6pt}
+  {\color{utaRojo}\rule{\linewidth}{1.2pt}}\\[30pt]
+  \begin{tabular}{rl}
+    \textbf{Versión del sistema:} & 1.0.0 (candidata a release) \\
+    \textbf{Repositorio:} & \href{https://github.com/THThoms/servicedesk-fisei/tree/microservicios}{\ttfamily THThoms/servicedesk-fisei}, rama \texttt{microservicios} \\
+    \textbf{Servidor destino:} & Ubuntu Server 24.04 LTS (x86\_64) \\
+    \textbf{Fecha:} & 10 de noviembre de 2026 \\
+  \end{tabular}
+  \vfill
+  {\small\color{gris}Para quien instalará el sistema en un servidor nuevo, sin necesidad de conocer el proyecto.\\
+  Este documento no contiene contraseñas, secretos ni direcciones de servidores reales.\\
+  Los valores entre \texttt{<...>} los sustituye cada instalación.\par}
+\end{titlepage}
+
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+
+% =====================================================================
+\chapter{Antes de empezar}
+
+\section{Qué vas a hacer}
+El código está en GitHub. A partir de él se genera un \textbf{paquete de instalación}
+(un archivo \cod{.tar.gz}). Ese paquete se copia al servidor, donde un instalador levanta
+SQL Server, los tres microservicios, el gateway y el frontend en Docker.
+
+\begin{center}
+\begin{tikzpicture}[font=\small,
+  caja/.style={draw=utaRojo,rounded corners=3pt,minimum width=3.1cm,minimum height=1.25cm,align=center,fill=white,line width=0.6pt},
+  f/.style={-{Stealth[length=2.4mm]},line width=0.7pt,color=gris}]
+  \node[caja] (git) {\textbf{GitHub}\\rama \texttt{microservicios}};
+  \node[caja,right=2.1cm of git] (pkg) {\textbf{Paquete}\\\texttt{.tar.gz} + SHA-256};
+  \node[caja,right=2.1cm of pkg] (srv) {\textbf{Servidor}\\Ubuntu + Docker};
+  \draw[f] (git) -- node[above,font=\footnotesize]{1. generar} (pkg);
+  \draw[f] (pkg) -- node[above,font=\footnotesize]{2. copiar} (srv);
+  \node[below=0.35cm of srv,font=\footnotesize,align=center,text=gris] {3. instalar, 4. dominio y HTTPS,\\5. usuarios, 6. backups};
+\end{tikzpicture}
+\end{center}
+
+Hay dos caminos para llevar el paquete al servidor. Los dos instalan exactamente lo mismo.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{4.3cm}LL@{}}
+\toprule
+\cabecera & \textbf{Camino A (recomendado)} & \textbf{Camino B} \\
+\midrule
+Dónde se genera el paquete & En tu equipo & En el propio servidor \\
+Cómo llega al servidor & Se copia con \cod{scp} & Se clona el repositorio en el servidor \\
+Ventaja & El servidor no necesita acceso a GitHub ni Git & No hace falta copiar archivos \\
+Capítulo & \ref{cap:paquete}, sección \ref{sec:caminoA} & \ref{cap:paquete}, sección \ref{sec:caminoB} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Qué necesitas}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{4.2cm}L@{}}
+\toprule
+\cabecera \textbf{Elemento} & \textbf{Detalle} \\
+\midrule
+Servidor & Ubuntu Server 24.04 LTS, x86\_64 (SQL Server no funciona en ARM). Mínimo 2 vCPU, 4\,GB de RAM y 40\,GB de disco para pruebas; para producción, 4 vCPU, 8\,GB y 100\,GB \\
+Acceso & Usuario con \cod{sudo} y \textbf{acceso SSH con clave} (no con contraseña) \\
+Dominio & Un nombre, por ejemplo \cod{servicedesk.tu-dominio.edu.ec}, y permiso para crear su registro DNS \\
+Puertos & 80 y 443 accesibles desde Internet (Let's Encrypt los necesita), además del de SSH \\
+Edición de SQL Server & \textbf{Pruebas}: Developer. \textbf{Producción}: Express (hasta 10\,GB por base) o una edición con licencia \\
+Microsoft Entra ID & Quien administre el tenant debe añadir una \emph{Redirect URI} (capítulo \ref{cap:sso}) \\
+Copia externa & Una cuenta de Backblaze B2 con un \emph{bucket} privado (capítulo \ref{cap:backups}) \\
+Tu equipo & Git y Git Bash (en Windows), y un cliente SSH (\cod{ssh}, \cod{scp}) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Cómo leer este tutorial}
+Cada bloque de comandos indica dónde se ejecuta:
+
+\equipo
+\begin{lstlisting}
+comando que se escribe en tu computadora (Git Bash en Windows)
+\end{lstlisting}
+\servidor
+\begin{lstlisting}
+comando que se escribe en el servidor, conectado por SSH
+\end{lstlisting}
+
+Debajo de los pasos importantes, un recuadro verde indica qué debe aparecer:
+\begin{esperado}
+Lo que tienes que ver si todo va bien. Si ves otra cosa, no sigas: consulta el capítulo \ref{cap:problemas}.
+\end{esperado}
+
+\begin{aviso}[Reglas de seguridad durante todo el proceso]
+\begin{itemize}[leftmargin=*]
+  \item Nunca subas a GitHub un archivo \cod{.env}, claves, \emph{keystores}, \cod{google-services.json} ni backups. El repositorio es \textbf{público}.
+  \item No escribas contraseñas en documentos, chats ni capturas. El instalador las genera y las guarda en el servidor con permisos restringidos.
+  \item No abras los puertos 1433, 8080 ni 3000 en el cortafuegos. Solo se usan dentro del servidor.
+\end{itemize}
+\end{aviso}
+
+% =====================================================================
+\chapter{Subir el código a GitHub}\label{cap:github}
+
+El código consolidado ya está publicado en la rama \cod{microservicios} de
+\url{https://github.com/THThoms/servicedesk-fisei/tree/microservicios}.
+Este capítulo solo hace falta si has hecho cambios y quieres subirlos antes de desplegar.
+
+\section{Revisar antes de subir}
+\equipo
+\begin{lstlisting}
+cd <carpeta-del-proyecto>
+git switch microservicios
+git status                      # qué ha cambiado
+git diff                        # revisa el contenido línea a línea
+\end{lstlisting}
+
+Comprueba que en la lista no aparece ningún \cod{.env}, \cod{seed.demo.ts}, \cod{*.keystore},
+\cod{google-services.json}, \cod{*.bak} ni nada de \ruta{release/} o \ruta{backups/}. El
+\cod{.gitignore} los excluye, pero conviene mirarlo.
+
+\section{Confirmar y subir}
+\equipo
+\begin{lstlisting}
+git add <archivos-que-cambiaste>
+git commit -m "tipo(área): descripción breve del cambio"
+git push origin microservicios
+\end{lstlisting}
+
+\begin{esperado}
+\cod{microservicios -> microservicios} al final del \cod{push}, sin errores.
+\end{esperado}
+
+\begin{nota}[Si tu copia local no tiene el remoto configurado]
+Añádelo una vez con\\
+\cod{git remote add fisei https://github.com/THThoms/servicedesk-fisei.git}\\
+y usa \cod{git push fisei microservicios}. Nunca uses \cod{git push --force} ni \cod{--mirror}.
+\end{nota}
+
+% =====================================================================
+\chapter{Generar el paquete y llevarlo al servidor}\label{cap:paquete}
+
+\section{Camino A: generar el paquete en tu equipo}\label{sec:caminoA}
+El paquete se genera siempre desde un \textbf{clon nuevo}, no desde la carpeta en la que trabajas.
+Así contiene exactamente lo que está en GitHub, con finales de línea de Linux (LF).
+
+\equipo
+\begin{lstlisting}
+git clone -c core.autocrlf=false -b microservicios \
+    https://github.com/THThoms/servicedesk-fisei.git sd-release
+cd sd-release
+bash scripts/build-server-package.sh 1.0.0
+\end{lstlisting}
+
+\begin{esperado}
+Una serie de comprobaciones con \textcolor{verde}{$\checkmark$}, entre ellas:\\
+\cod{sin auditorías, pruebas, cuentas demo, IP públicas ni cuentas reales} y\\
+\cod{scripts y configuración del servidor con fin de línea LF}.\\
+Al final:\\
+\cod{release/servicedesk-uta-server-1.0.0.tar.gz (568K, 225 archivos)}\\
+y su SHA-256. Si aparece una \textcolor{red}{\ding{55}}, el script se detiene y explica el motivo.
+\end{esperado}
+
+El paquete y su suma de comprobación quedan en \ruta{sd-release/release/}. Cópialos al servidor:
+
+\equipo
+\begin{lstlisting}
+scp release/servicedesk-uta-server-1.0.0.tar.gz \
+    release/servicedesk-uta-server-1.0.0.tar.gz.sha256 \
+    <usuario>@<IP-o-nombre-del-servidor>:/tmp/
+\end{lstlisting}
+
+Después verifica en el servidor que el archivo llegó íntegro:
+
+\servidor
+\begin{lstlisting}
+cd /tmp && sha256sum -c servicedesk-uta-server-1.0.0.tar.gz.sha256
+\end{lstlisting}
+
+\begin{esperado}
+\cod{servicedesk-uta-server-1.0.0.tar.gz: OK}. Si dice \cod{FAILED}, vuelve a copiarlo.
+\end{esperado}
+
+\section{Camino B: clonar y generar en el servidor}\label{sec:caminoB}
+\servidor
+\begin{lstlisting}
+sudo apt update && sudo apt -y install git
+git clone -b microservicios \
+    https://github.com/THThoms/servicedesk-fisei.git /tmp/sd-src
+cd /tmp/sd-src
+bash scripts/build-server-package.sh 1.0.0
+cp release/servicedesk-uta-server-1.0.0.tar.gz* /tmp/
+\end{lstlisting}
+
+El resultado esperado es el mismo que en el camino A. A partir de aquí, los dos caminos continúan igual.
+
+% =====================================================================
+\chapter{Preparar el servidor}\label{cap:preparar}
+
+\section{Ubuntu}
+\servidor
+\begin{lstlisting}
+sudo apt update && sudo apt -y full-upgrade
+sudo apt -y install ca-certificates curl gnupg rsync openssl nginx certbot ufw
+sudo timedatectl set-timezone America/Guayaquil
+\end{lstlisting}
+
+Si el servidor solo trae el usuario \cod{root}, crea uno administrativo y copia tu clave SSH a ese usuario:
+\begin{lstlisting}
+adduser admin && usermod -aG sudo admin
+\end{lstlisting}
+
+\begin{aviso}[Antes de desactivar las contraseñas de SSH]
+Comprueba en \textbf{otra} terminal que puedes entrar con tu clave. El instalador endurece
+SSH (sin contraseña, sin \cod{root} por contraseña) solo si encuentra una clave autorizada, y lo valida
+antes con \cod{sshd -t}. Aun así, no cierres la sesión actual hasta comprobar que puedes volver a entrar.
+\end{aviso}
+
+\section{Docker Engine y Compose}
+Instálalos desde el repositorio oficial de Docker, no desde el paquete \cod{docker.io} de Ubuntu:
+
+\servidor
+\begin{lstlisting}
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+    sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) \
+signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/ubuntu \
+$(. /etc/os-release && echo $VERSION_CODENAME) stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list
+sudo apt update
+sudo apt -y install docker-ce docker-ce-cli containerd.io \
+    docker-buildx-plugin docker-compose-plugin
+sudo docker version --format '{{.Server.Version}}' && sudo docker compose version
+\end{lstlisting}
+
+\begin{esperado}
+Una versión de Docker reciente (se recomienda 28 o superior) y \cod{Docker Compose version v2.x}.
+\end{esperado}
+
+El cortafuegos (UFW con SSH, 80 y 443) lo configura el instalador. Si tu SSH no usa el puerto 22,
+indícalo luego con \cod{--ssh-port N}.
+
+% =====================================================================
+\chapter{Instalar ServiceDesk}\label{cap:instalar}
+
+\section{Extraer el paquete}
+\servidor
+\begin{lstlisting}
+sudo mkdir -p /opt/servicedesk
+sudo tar -xzf /tmp/servicedesk-uta-server-1.0.0.tar.gz \
+    -C /opt/servicedesk --strip-components=1
+cd /opt/servicedesk && ls
+\end{lstlisting}
+
+\begin{esperado}
+\cod{api-gateway auth-service catalog-service deploy docs frontend scripts ticket-service}, además de
+\cod{MANIFEST.md}, \cod{FILES.txt} y \cod{VERSION}. Con \cod{ls -a} verás también \cod{.env.example}.
+\end{esperado}
+
+\section{Configurar \texttt{deploy/server/.env}}
+\servidor
+\begin{lstlisting}
+cd /opt/servicedesk
+sudo cp .env.example deploy/server/.env
+sudo chmod 600 deploy/server/.env
+sudo nano deploy/server/.env
+\end{lstlisting}
+
+Rellena estas variables:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{5.0cm}L@{}}
+\toprule
+\cabecera \textbf{Variable} & \textbf{Qué poner} \\
+\midrule
+\cod{PUBLIC\_DOMAIN} & El dominio, sin \cod{https://}. Ejemplo: \cod{servicedesk.tu-dominio.edu.ec} \\
+\cod{SERVER\_PURPOSE} & \cod{pruebas} o \cod{produccion} \\
+\cod{MSSQL\_PID} & \cod{Developer} solo si es de pruebas; \cod{Express} (o tu edición con licencia) en producción. Con \cod{produccion}, Developer se \textbf{bloquea} \\
+\cod{INITIAL\_ADMIN\_EMAIL}, \cod{INITIAL\_ADMIN\_NAME} & Correo y nombre del primer administrador. \textbf{No} se pone contraseña \\
+\cod{MICROSOFT\_*} (4 variables) & Datos del registro de la aplicación en Entra ID (capítulo \ref{cap:sso}). Las cuatro o ninguna \\
+\cod{ADMIN\_EMAILS} & Correos que entrarán como administradores con Microsoft \\
+\cod{EMAIL\_SEND\_MODE}, \cod{SMTP\_*} & \cod{log} para pruebas; \cod{smtp} con los datos del servidor de correo para enviar \\
+\cod{FCM\_*} & Solo si se usarán notificaciones push en Android \\
+\cod{BACKUP\_ALERT\_EMAIL} & Correo que recibirá avisos si falla un backup \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{aviso}[Deja vacías las contraseñas]
+\cod{MSSQL\_SA\_PASSWORD}, las \cod{*\_DB\_PASSWORD} y \cod{JWT\_SECRET} deben quedar \textbf{vacías}:
+el instalador las genera al azar con \cod{--generate-secrets} y no las muestra.
+\end{aviso}
+
+\section{Ensayo sin instalar nada}
+\servidor
+\begin{lstlisting}
+sudo scripts/install-server.sh --mode clean --generate-secrets --dry-run
+\end{lstlisting}
+
+\begin{esperado}
+Una tabla con cada variable como CONFIGURADA, VACÍA o AUSENTE (nunca su valor) y al final
+\cod{Configuración válida}. Cada \ding{55} dice qué corregir en el \cod{.env}.
+\end{esperado}
+
+\section{Instalar}
+Elige el modo:
+
+\begin{itemize}
+  \item \textbf{Instalación limpia}: sistema nuevo, sin datos.
+\servidor
+\begin{lstlisting}
+sudo scripts/install-server.sh --mode clean --generate-secrets
+\end{lstlisting}
+  \item \textbf{Restauración}: trasladar los datos de otra instalación. Necesitas un backup completo
+        (los tres \cod{.bak}, las imágenes y \cod{SHA256SUMS}) copiado en el servidor. Valídalo primero con \cod{--dry-run}:
+\servidor
+\begin{lstlisting}
+sudo scripts/install-server.sh --mode restore --from /root/restore/<ID> \
+    --generate-secrets --dry-run
+sudo scripts/install-server.sh --mode restore --from /root/restore/<ID> \
+    --generate-secrets
+\end{lstlisting}
+\end{itemize}
+
+El instalador pide confirmar la licencia de SQL Server (escribe \cod{SI}) y, antes de tocarlos, el
+cortafuegos y SSH. La primera vez tarda entre 5 y 15 minutos, porque compila las imágenes.
+
+\begin{esperado}
+Entre otras líneas: la edición real de SQL Server, \cod{6/6 servicios healthy} y
+\cod{SMOKE: ... 0 fallos}. En modo restauración, además: \cod{SHA-256 correcto}, \cod{RESTORE VERIFYONLY},
+\cod{DBCC CHECKDB} correctos y los conteos de usuarios, tickets e imágenes.
+\end{esperado}
+
+\section{Contraseña del administrador inicial}
+Solo en la instalación limpia. El instalador guarda una contraseña \textbf{temporal} en un archivo
+que únicamente puede leer \cod{root}. Léela una vez y bórrala:
+
+\servidor
+\begin{lstlisting}
+sudo cat deploy/server/.initial-admin-secret
+sudo shred -u deploy/server/.initial-admin-secret
+\end{lstlisting}
+
+Al entrar por primera vez, la aplicación obliga a cambiarla por una propia.
+
+% =====================================================================
+\chapter{Dominio y HTTPS}\label{cap:https}
+
+\section{DNS}
+En el proveedor del dominio, crea un registro \cod{A} con el nombre del dominio y la IP del servidor.
+Comprueba que ya resuelve:
+
+\servidor
+\begin{lstlisting}
+dig +short servicedesk.tu-dominio.edu.ec
+\end{lstlisting}
+
+\begin{esperado}
+La IP del servidor nuevo. El cambio de DNS puede tardar unos minutos en propagarse.
+\end{esperado}
+
+\section{Certificado de Let's Encrypt}
+\servidor
+\begin{lstlisting}
+cd /opt/servicedesk
+sudo certbot certonly --webroot -w /var/www/certbot \
+     -d servicedesk.tu-dominio.edu.ec \
+     --agree-tos -m <correo-de-contacto> --no-eff-email
+sudo scripts/install-server.sh --nginx-tls
+sudo certbot renew --dry-run
+\end{lstlisting}
+
+\begin{esperado}
+\cod{Successfully received certificate}, luego la configuración de nginx con TLS, y la prueba de
+renovación correcta. La renovación es automática.
+\end{esperado}
+
+\section{Comprobar el sistema por el dominio}
+\servidor
+\begin{lstlisting}
+sudo SMOKE_BASE_URL=https://servicedesk.tu-dominio.edu.ec \
+     scripts/operations/smoke-server.sh
+curl -s -o /dev/null -w '%{http_code}\n' http://servicedesk.tu-dominio.edu.ec/
+\end{lstlisting}
+
+\begin{esperado}
+\cod{SMOKE: ... 0 fallos} y \cod{301}, la redirección de HTTP a HTTPS.
+\end{esperado}
+
+% =====================================================================
+\chapter{Inicio de sesión con Microsoft}\label{cap:sso}
+
+\begin{enumerate}
+  \item Quien administra el tenant de Microsoft Entra ID añade esta \emph{Redirect URI} al registro
+        de la aplicación:
+        \begin{center}\cod{https://<PUBLIC\_DOMAIN>/api/auth/microsoft/callback}\end{center}
+  \item En \ruta{deploy/server/.env} se ponen las cuatro variables \cod{MICROSOFT\_CLIENT\_ID},
+        \cod{MICROSOFT\_TENANT\_ID}, \cod{MICROSOFT\_CLIENT\_SECRET} y \cod{MICROSOFT\_REDIRECT\_URI}.
+        La última debe ser \textbf{exactamente} igual a la URL anterior.
+  \item Se aplican los cambios:
+\servidor
+\begin{lstlisting}
+cd /opt/servicedesk
+sudo env RUN_SEED=false docker compose -p servicedesk \
+     -f deploy/server/compose.yaml \
+     --env-file deploy/server/.env up -d
+\end{lstlisting}
+  \item Se prueba abriendo \cod{https://<dominio>} y pulsando «Iniciar sesión con Microsoft».
+\end{enumerate}
+
+Solo se admiten cuentas del dominio de \cod{ALLOWED\_DOMAIN} (por defecto, \cod{uta.edu.ec}).
+
+% =====================================================================
+\chapter{Usuarios y roles}\label{cap:usuarios}
+
+Todas las personas entran como \cod{user}. Los roles de técnico, DTIC y administrador se asignan desde el
+servidor. Para asignar un rol a alguien que usa Microsoft, esa persona debe entrar antes al menos una vez.
+
+\servidor
+\begin{lstlisting}
+cd /opt/servicedesk
+# área Técnicos, área DTIC, bloque del técnico y comprobación:
+sudo scripts/operations/manage-user.sh set-role <correo> technician
+sudo scripts/operations/manage-user.sh set-role <correo> dtic
+sudo scripts/operations/manage-user.sh set-block <correo> BLOQUE_1
+sudo scripts/operations/manage-user.sh list-staff
+\end{lstlisting}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{6.2cm}L@{}}
+\toprule
+\cabecera \textbf{Otras operaciones} & \textbf{Comando} \\
+\midrule
+Crear una cuenta solo con Microsoft & \cod{manage-user.sh create <correo> <rol> "<Nombre>"} \\
+Crear una cuenta con contraseña local & Lo mismo con \cod{--password} (la pide sin mostrarla) \\
+Recuperar el acceso de una cuenta & \cod{manage-user.sh reset-password <correo>} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Prueba completa en el navegador}
+\begin{enumerate}
+  \item Como \textbf{usuario}: «Nuevo ticket», elige servicio y ubicación, escribe el detalle, adjunta una
+        imagen JPG o PNG y créalo.
+  \item Como \textbf{técnico} del área: «Disponibles», acepta el ticket y ábrelo desde «Mis aceptados».
+        Debe verse la imagen.
+  \item El técnico pulsa «Resolver». El usuario \textbf{rechaza} con un motivo y el ticket vuelve al técnico.
+  \item El técnico resuelve de nuevo y el usuario \textbf{acepta}. El ticket queda cerrado con su constancia.
+  \item Como \textbf{administrador}: revisa «Estadísticas», «Historial» y «Reportes», e imprime un reporte.
+\end{enumerate}
+
+% =====================================================================
+\chapter{Copias de seguridad}\label{cap:backups}
+
+El instalador deja programados el backup diario (03:15), su comprobación cada 6 horas, la retención
+y la verificación semanales y un simulacro de restauración mensual. Falta conectar la
+\textbf{copia externa cifrada} en Backblaze B2.
+
+\section{Conectar Backblaze B2}
+\begin{enumerate}
+  \item En Backblaze, crea un \emph{bucket} \textbf{privado} y una \emph{Application Key} limitada a ese bucket.
+  \item En el servidor, crea el archivo de credenciales, que está separado del \cod{.env}:
+\servidor
+\begin{lstlisting}
+sudo install -d -m 700 /etc/servicedesk
+sudo test -f /etc/servicedesk/backup.env || \
+  sudo install -m 600 /opt/servicedesk/deploy/backup/backup.env.example \
+    /etc/servicedesk/backup.env
+sudo nano /etc/servicedesk/backup.env
+\end{lstlisting}
+        Rellena estas variables:
+        \begin{itemize}
+          \item \cod{RESTIC\_REPOSITORY}: \cod{s3:https://<endpoint>/<bucket>/servicedesk}
+          \item \cod{AWS\_ACCESS\_KEY\_ID}: el \emph{keyID} de la Application Key
+          \item \cod{AWS\_SECRET\_ACCESS\_KEY}: la \emph{applicationKey}
+          \item \cod{B2\_REGION}: la región que aparece en el endpoint
+        \end{itemize}
+  \item Genera la clave de cifrado, inicializa el repositorio y comprueba la conexión:
+\servidor
+\begin{lstlisting}
+cd /opt/servicedesk
+sudo scripts/backup/restic-init.sh --generate-password
+sudo scripts/backup/restic-init.sh
+sudo scripts/backup/restic-test-connection.sh
+\end{lstlisting}
+\end{enumerate}
+
+\begin{aviso}[Custodia de la clave]
+La clave de cifrado queda en \ruta{/etc/servicedesk/restic.pass}. Sin ella, los backups externos
+\textbf{no se pueden recuperar}. Guarda una copia fuera del servidor, en un gestor de contraseñas, y
+nombra al menos dos personas que la custodien.
+\end{aviso}
+
+\section{Primer backup y simulacro}
+\servidor
+\begin{lstlisting}
+sudo systemctl start servicedesk-backup.service
+sudo scripts/operations/check-backup.sh
+sudo scripts/backup/restore-drill.sh
+\end{lstlisting}
+
+\begin{esperado}
+\cod{Backup completo}, \cod{Backup correcto de hace 0 h} y \cod{RESTORE DRILL PASS}. Si el backup
+termina con código 3, falta la copia externa; con código 4, la copia externa falló.
+\end{esperado}
+
+% =====================================================================
+\chapter{Comprobación final}\label{cap:final}
+
+\servidor
+\begin{lstlisting}
+sudo scripts/operations/server-health.sh
+\end{lstlisting}
+
+\begin{esperado}
+\cod{Resumen: 0 fallo(s)}. Los avisos se pueden revisar, pero no bloquean la puesta en marcha.
+\end{esperado}
+
+\section{Lista antes de abrir el sistema a los usuarios}
+\begin{itemize}[label={}]
+  \item \casilla Los 6 servicios aparecen como \cod{healthy} en \cod{docker compose ... ps}.
+  \item \casilla La dirección \ruta{https://<dominio>/api/auth/config} muestra \cod{devLoginEnabled:false} y \cod{microsoftSimulateEnabled:false}.
+  \item \casilla La contraseña temporal del administrador está cambiada y su archivo, borrado.
+  \item \casilla \cod{sudo ufw status} solo permite SSH, 80 y 443.
+  \item \casilla \cod{sudo ss -tlnp | grep -E ':(1433|8080|3000)'} solo muestra \cod{127.0.0.1}.
+  \item \casilla SSH no acepta contraseñas: \cod{sudo sshd -T | grep passwordauthentication} da \cod{no}.
+  \item \casilla En producción, la edición de SQL Server no es Developer y la licencia está confirmada.
+  \item \casilla El certificado es válido y \cod{certbot renew --dry-run} es correcto.
+  \item \casilla El backup manual terminó con copia externa y el simulacro de restauración pasó.
+  \item \casilla El inicio de sesión con Microsoft funciona con una cuenta real.
+  \item \casilla La prueba completa en el navegador fue correcta.
+\end{itemize}
+
+% =====================================================================
+\chapter{Actualizar a una versión nueva}\label{cap:actualizar}
+
+\begin{enumerate}
+  \item \textbf{En tu equipo}: sube los cambios a GitHub (capítulo \ref{cap:github}) y genera el paquete nuevo
+        con otra versión, por ejemplo \cod{1.0.1} (capítulo \ref{cap:paquete}). Cópialo y verifícalo en el servidor.
+  \item \textbf{En el servidor}: haz un backup y aplica la versión nueva, conservando el \cod{.env}:
+\servidor
+\begin{lstlisting}
+sudo systemctl start servicedesk-backup.service
+sudo cp /opt/servicedesk/deploy/server/.env /root/servicedesk.env.respaldo
+sudo tar -xzf /tmp/servicedesk-uta-server-1.0.1.tar.gz \
+    -C /opt/servicedesk --strip-components=1
+cd /opt/servicedesk
+sudo env RUN_SEED=false docker compose -p servicedesk \
+     -f deploy/server/compose.yaml \
+     --env-file deploy/server/.env up -d --build
+sudo scripts/operations/smoke-server.sh
+\end{lstlisting}
+  \item Las migraciones de la base de datos se aplican solas al arrancar cada servicio.
+  \item Si algo falla, extrae de nuevo el paquete anterior y repite el último paso. Si la versión nueva
+        había cambiado datos, restaura el backup del paso 2 con la guía de restauración y rollback
+        que está en \ruta{docs/operations/}.
+\end{enumerate}
+
+\begin{nota}
+El paquete no contiene el \cod{.env}, así que extraer una versión nueva no lo sobrescribe. Aun así,
+la copia en \ruta{/root} protege contra un error al extraer.
+\end{nota}
+
+% =====================================================================
+\chapter{Problemas frecuentes}\label{cap:problemas}
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}P{5.2cm}L@{}}
+\toprule
+\cabecera \textbf{Qué ves} & \textbf{Qué hacer} \\
+\midrule
+\cod{FAILED} al verificar el SHA-256 & El archivo se copió mal. Cópialo de nuevo \\
+\cod{bash\textbackslash r: No such file or directory} & El paquete tiene finales de línea de Windows. Genéralo desde un clon nuevo (capítulo \ref{cap:paquete}) \\
+El instalador rechaza \cod{MSSQL\_PID=Developer} & Estás en \cod{produccion}. Usa \cod{Express} o la edición con licencia \\
+\cod{mssql} no llega a \emph{healthy} & Poca memoria (SQL Server necesita al menos 2\,GB). Revisa los logs con \cod{docker compose ... logs mssql} \\
+Un servicio se reinicia una y otra vez & Revisa sus logs. Suele ser que las contraseñas del \cod{.env} se cambiaron después de instalar \\
+Certbot no obtiene el certificado & El DNS aún no apunta al servidor o el puerto 80 está cerrado \\
+Error de \emph{redirect URI} al entrar con Microsoft & La URI registrada en Entra ID no es idéntica a \cod{MICROSOFT\_REDIRECT\_URI} \\
+Error de CORS en el navegador & \cod{PUBLIC\_DOMAIN} no coincide con el dominio desde el que se accede \\
+Respuesta 429 al iniciar sesión & Demasiados intentos fallidos. Espera unos minutos \\
+No se suben fotos del iPhone & El formato HEIC no se admite. Usa «Más compatible» en la cámara o comparte la foto como JPG \\
+Backup con código 3 o 4 & Falta configurar B2 (código 3) o no hay conexión o las credenciales están mal (código 4) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+La lista completa está en \ruta{docs/troubleshooting/PROBLEMAS_FRECUENTES.md}, dentro del paquete.
+
+\begin{nota}[Estado de la validación]
+Este procedimiento se ha validado instalando el paquete en una simulación de servidor nuevo: instalación
+limpia, restauración, prueba funcional completa y recuperación ante caídas de SQL Server. Todavía no
+se ha ejecutado en un Ubuntu real con systemd, nginx y certbot, ni con el inicio de sesión real de Microsoft,
+correo SMTP o notificaciones push. La primera instalación real debe hacerse en un servidor de pruebas.
+\end{nota}
+
+\end{document}

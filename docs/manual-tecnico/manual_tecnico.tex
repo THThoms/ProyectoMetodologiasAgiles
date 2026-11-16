@@ -1,0 +1,1241 @@
+% =====================================================================
+%  Manual técnico — ServiceDesk UTA
+%  Compilar:  latexmk -pdf manual_tecnico.tex
+%  (o dos veces: pdflatex manual_tecnico.tex)
+%
+%  Este documento NO contiene contraseñas, secretos, direcciones de
+%  servidores reales ni datos personales. Los valores entre <...> son
+%  marcadores que cada instalación sustituye.
+% =====================================================================
+\documentclass[11pt,a4paper,oneside]{report}
+
+% ---------- Idioma y codificación ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-noshorthands,es-tabla]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ---------- Página ----------
+\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=2.6cm,right=2.4cm,headheight=14pt]{geometry}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt}
+
+% ---------- Tablas, color, código, figuras ----------
+\usepackage[table]{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{bookmark}
+
+% ---------- Colores ----------
+\definecolor{utaRojo}{HTML}{8B1A1A}
+\definecolor{gris}{HTML}{5A5A5A}
+\definecolor{grisClaro}{HTML}{F3F3F3}
+\definecolor{grisLinea}{HTML}{CFCFCF}
+\definecolor{azulNota}{HTML}{1F4E79}
+\definecolor{ambar}{HTML}{8A5A00}
+
+\hypersetup{colorlinks=true,linkcolor=utaRojo,urlcolor=azulNota,citecolor=utaRojo,
+  pdftitle={Manual técnico — ServiceDesk UTA},pdfauthor={Equipo ServiceDesk UTA}}
+
+% ---------- Títulos ----------
+\titleformat{\chapter}[hang]{\normalfont\huge\bfseries\color{utaRojo}}{\thechapter}{0.6em}{}
+\titlespacing*{\chapter}{0pt}{-10pt}{18pt}
+\titleformat{\section}{\normalfont\Large\bfseries\color{utaRojo}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries}{\thesubsection}{0.6em}{}
+
+% ---------- Encabezados ----------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{gris}ServiceDesk UTA · Manual técnico}
+\fancyhead[R]{\small\color{gris}\nouppercase{\leftmark}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\small\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+% ---------- Código ----------
+\lstdefinestyle{shell}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{grisClaro},
+  frame=single, rulecolor=\color{grisLinea},
+  framesep=4pt, xleftmargin=6pt, xrightmargin=6pt,
+  breaklines=true, breakatwhitespace=false,
+  postbreak=\mbox{\textcolor{gris}{$\hookrightarrow$}\space},
+  columns=fullflexible, keepspaces=true, showstringspaces=false,
+  commentstyle=\color{gris}\itshape,
+  literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1
+           {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1 {Ó}{{\'O}}1 {Ú}{{\'U}}1
+           {ñ}{{\~n}}1 {Ñ}{{\~N}}1 {·}{{\textperiodcentered}}1
+           {→}{{$\rightarrow$}}1 {…}{{\ldots}}1
+}
+\lstset{style=shell}
+\lstnewenvironment{bash}{\lstset{style=shell,language=bash,morecomment=[l]\#}}{}
+
+% \cod permite cortar la línea tras cada guion bajo; \ruta, tras cada / . _ y -.
+\newcommand{\codus}{\textunderscore\allowbreak}
+\DeclareRobustCommand{\cod}[1]{{\small\ttfamily\let\_\codus #1}}
+\makeatletter
+\g@addto@macro{\UrlBreaks}{\do\_\do\-\do\.}
+\makeatother
+\urlstyle{tt}
+\DeclareRobustCommand{\ruta}[1]{{\small\nolinkurl{#1}}}
+\setlength{\emergencystretch}{2.5em}
+% En los marcadores del PDF, \cod y \ruta se muestran como texto plano.
+\pdfstringdefDisableCommands{\def\cod#1{#1}\def\ruta#1{#1}\def\_{\textunderscore}}
+
+% ---------- Cuadros ----------
+\newtcolorbox{nota}[1][Nota]{colback=azulNota!5,colframe=azulNota,fonttitle=\bfseries,
+  title=#1,boxrule=0.6pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt}
+\newtcolorbox{aviso}[1][Importante]{colback=ambar!7,colframe=ambar,fonttitle=\bfseries,
+  title=#1,boxrule=0.6pt,arc=2pt,left=6pt,right=6pt,top=4pt,bottom=4pt}
+
+% ---------- Tablas ----------
+\renewcommand{\arraystretch}{1.25}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcommand{\cabecera}{\rowcolor{utaRojo!12}}
+
+\setcounter{tocdepth}{1}
+\setcounter{secnumdepth}{2}
+
+% =====================================================================
+\begin{document}
+
+% ---------- Portada ----------
+\begin{titlepage}
+  \centering
+  \vspace*{2.5cm}
+  {\color{utaRojo}\rule{\linewidth}{1.2pt}}\\[14pt]
+  {\Huge\bfseries ServiceDesk UTA\par}
+  \vspace{8pt}
+  {\LARGE Manual técnico\par}
+  \vspace{6pt}
+  {\color{utaRojo}\rule{\linewidth}{1.2pt}}\\[30pt]
+  {\large Sistema de mesa de servicio basado en microservicios\par}
+  \vspace{4pt}
+  {\large Universidad Técnica de Ambato\par}
+  \vfill
+  \begin{tabular}{rl}
+    \textbf{Versión del sistema:} & 1.0.0 (candidata a release) \\
+    \textbf{Fecha del documento:} & 9 de noviembre de 2026 \\
+    \textbf{Dirigido a:} & desarrolladores y operadores del servidor \\
+  \end{tabular}
+  \vspace{2cm}
+
+  {\small\color{gris}Este manual no contiene contraseñas, secretos, direcciones de servidores\\
+  ni datos personales. Los valores entre \cod{<...>} son marcadores que cada instalación sustituye.\par}
+\end{titlepage}
+
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+
+% =====================================================================
+\chapter{Introducción}
+
+\section{Propósito del sistema}
+ServiceDesk UTA es una mesa de servicio web y móvil para registrar, atender y cerrar
+solicitudes de soporte técnico de la comunidad universitaria. Una persona crea un
+\emph{ticket} con el servicio afectado, la descripción, la ubicación y fotografías.
+El personal técnico lo acepta y lo resuelve. Finalmente, quien lo creó acepta o rechaza la solución
+mediante una \emph{validación digital} que queda registrada de forma inmutable.
+
+\section{Alcance de este manual}
+El manual describe la arquitectura, el modelo de datos, la API, el frontend, la seguridad,
+la configuración, la instalación en un servidor nuevo, la operación diaria, las copias de
+seguridad y la solución de problemas. Se basa en el código y la documentación del
+repositorio en la versión 1.0.0.
+
+\begin{itemize}
+  \item \textbf{Desarrolladores}: capítulos \ref{cap:arquitectura} a \ref{cap:seguridad} y \ref{cap:pruebas}.
+  \item \textbf{Operadores del servidor}: capítulos \ref{cap:configuracion} a \ref{cap:problemas}.
+\end{itemize}
+
+\section{Documentación complementaria}
+El repositorio contiene guías detalladas que este manual resume:
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{6.3cm}L@{}}
+\toprule
+\cabecera \textbf{Carpeta / archivo} & \textbf{Contenido} \\
+\midrule
+\ruta{docs/architecture/} & Arquitectura de la aplicación y del servidor \\
+\ruta{docs/installation/} & Requisitos, instalación, red, nginx, SQL Server, producción, seguridad \\
+\ruta{docs/operations/} & Backups, Backblaze B2, retención, restauración, usuarios, monitoreo \\
+\ruta{docs/troubleshooting/} & Problemas frecuentes \\
+\ruta{docs/security/} & Estado de seguridad antes del servidor nuevo \\
+\ruta{scripts/README.md} & Descripción de los scripts \\
+\ruta{README.md} & Puesta en marcha rápida del laboratorio y reglas del repositorio \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% =====================================================================
+\chapter{Arquitectura}\label{cap:arquitectura}
+
+\section{Visión general}
+El sistema sigue una arquitectura de microservicios. Cada servicio es dueño de su propia
+base de datos y no lee las tablas de otro servicio. Toda petición del navegador o de la
+aplicación Android entra por un único punto, el \emph{API Gateway}.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  caja/.style={draw=utaRojo,fill=white,rounded corners=2pt,minimum width=2.7cm,minimum height=0.9cm,align=center,line width=0.6pt},
+  bd/.style={draw=azulNota,fill=azulNota!6,rounded corners=2pt,minimum width=2.3cm,minimum height=0.75cm,align=center},
+  flecha/.style={-{Stealth[length=2.2mm]},line width=0.6pt,color=gris},
+  node distance=0.55cm and 0.55cm]
+  \node[caja] (cli) {Navegador /\\App Android};
+  \node[caja,below=of cli] (nginx) {nginx del host\\(TLS 443)};
+  \node[caja,below left=0.7cm and 0.4cm of nginx] (front) {frontend\\(nginx + React)};
+  \node[caja,below right=0.7cm and 0.4cm of nginx] (gw) {api-gateway\\(Express)};
+  \node[caja,below=1.1cm of gw] (cat) {catalog-service};
+  \node[caja,left=0.5cm of cat] (auth) {auth-service};
+  \node[caja,right=0.5cm of cat] (tic) {ticket-service};
+  \node[bd,below=0.9cm of auth] (adb) {auth\_db};
+  \node[bd,below=0.9cm of cat] (cdb) {catalog\_db};
+  \node[bd,below=0.9cm of tic] (tdb) {ticket\_db};
+  \begin{scope}[on background layer]
+    \node[draw=azulNota,dashed,rounded corners=3pt,fit=(adb)(cdb)(tdb),inner sep=8pt,
+      label={[font=\footnotesize\color{azulNota}]below:SQL Server 2022 (contenedor mssql)}] {};
+  \end{scope}
+  \draw[flecha] (cli) -- (nginx);
+  \draw[flecha] (nginx) -- node[left,font=\footnotesize]{/} (front);
+  \draw[flecha] (nginx) -- node[right,font=\footnotesize]{/api} (gw);
+  \draw[flecha] (gw) -- (auth);
+  \draw[flecha] (gw) -- (cat);
+  \draw[flecha] (gw) -- (tic);
+  \draw[flecha] (auth) -- (adb);
+  \draw[flecha] (cat) -- (cdb);
+  \draw[flecha] (tic) -- (tdb);
+\end{tikzpicture}
+\caption{Componentes y recorrido de una petición. Las llamadas internas entre servicios se describen en la sección~\ref{sec:interna}.}
+\end{figure}
+
+\section{Componentes}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{3.1cm}L@{}}
+\toprule
+\cabecera \textbf{Componente} & \textbf{Responsabilidad} \\
+\midrule
+\cod{frontend} & Interfaz React servida por nginx. Es también la base de la aplicación Android (Capacitor). \\
+\cod{api-gateway} & Punto de entrada único. Aplica CORS y cabeceras de seguridad y reenvía cada prefijo \cod{/api/...} al servicio que corresponde. \\
+\cod{auth-service} & Usuarios, roles, bloques, inicio de sesión local y con Microsoft, sesiones JWT y registro de accesos. \\
+\cod{catalog-service} & Catálogo de servicios, reglas de enrutamiento, ubicaciones y base de conocimiento. \\
+\cod{ticket-service} & Tickets, historial de eventos, adjuntos, asignación, escalamiento, validación digital, reportes, notificaciones por correo y push. \\
+\cod{mssql} & SQL Server 2022 con las tres bases de datos. \\
+\cod{mssql-init} & Contenedor de un solo uso que crea las bases y un \emph{login} propio para cada servicio. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Enrutamiento del gateway}\label{sec:gateway}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{4.2cm}P{3.2cm}L@{}}
+\toprule
+\cabecera \textbf{Prefijo público} & \textbf{Servicio} & \textbf{Ruta interna} \\
+\midrule
+\cod{/api/auth/*} & auth-service & \cod{/auth/*} \\
+\cod{/api/catalog/*} & catalog-service & se elimina el prefijo (\cod{/services}, \cod{/locations}) \\
+\cod{/api/knowledge/*} & catalog-service & \cod{/knowledge/*} \\
+\cod{/api/tickets/*} & ticket-service & \cod{/tickets/*} \\
+\cod{/api/admin/*} & ticket-service & \cod{/admin/*} \\
+\cod{/api/notifications/*} & ticket-service & \cod{/notifications/*} \\
+\cod{/api/routing/*} & ticket-service & obsoleto (responde 410) \\
+\cod{/auth/*} & auth-service & \cod{/auth/*}. Solo para el \emph{Redirect URI} de Microsoft (\cod{/auth/callback}) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Cada servicio expone \cod{/health} (proceso vivo) y \cod{/health/ready} (dependencias
+listas, incluida la base de datos; en ticket-service también el volumen de imágenes). En el
+gateway, \cod{/health/ready} agrega el estado de los tres servicios. Si un servicio no responde,
+el gateway devuelve \textbf{502} con el mensaje «Servicio no disponible».
+
+\section{Comunicación interna entre servicios}\label{sec:interna}
+Además del tráfico que llega por el gateway, los servicios se llaman entre sí por HTTP dentro
+de la red \cod{app}:
+\begin{itemize}
+  \item \textbf{catalog-service y ticket-service $\rightarrow$ auth-service}: cada petición autenticada se
+        valida con \cod{POST /auth/verify}. Así, una sesión revocada deja de funcionar en todos los
+        servicios, no solo en auth-service.
+  \item \textbf{ticket-service $\rightarrow$ catalog-service}: consulta el servicio elegido, sus reglas de
+        enrutamiento (área y prioridad) y los artículos de conocimiento vinculados a una solución.
+  \item \textbf{ticket-service $\rightarrow$ auth-service}: obtiene la lista de técnicos y sus bloques para
+        la asignación y los reportes.
+\end{itemize}
+
+\section{Arquitectura del servidor}
+\begin{itemize}
+  \item \textbf{Host}: Ubuntu Server 24.04 LTS (x86\_64). El cortafuegos UFW solo admite los puertos 22, 80 y 443.
+  \item \textbf{nginx del host}: termina TLS con certificados de Let's Encrypt. Reenvía \cod{/} al frontend y \cod{/api/} al gateway, que escuchan únicamente en \cod{127.0.0.1}. Además:
+    \begin{itemize}
+      \item \cod{/auth/callback} va al gateway (retorno de Microsoft) y \cod{/healthz} expone el \cod{/health/ready} del gateway.
+      \item \cod{/api/auth/login} tiene un límite de 10 peticiones por minuto por IP (ráfaga de 5); al superarlo responde 429.
+      \item \cod{/uploads/} responde 404: las imágenes nunca se sirven como archivos estáticos.
+      \item El tamaño máximo de una petición es de 30\,MB y se añaden cabeceras de seguridad (HSTS, \cod{Permissions-Policy}, etc.).
+    \end{itemize}
+  \item \textbf{Redes de Docker}:
+    \begin{itemize}
+      \item \cod{edge}: frontend y gateway.
+      \item \cod{app}: gateway y servicios.
+      \item \cod{data}: red \emph{interna} sin salida a Internet, con los servicios y SQL Server.
+    \end{itemize}
+    SQL Server no publica ningún puerto.
+  \item \textbf{Volúmenes}:
+    \begin{itemize}
+      \item \cod{mssql-system}, \cod{mssql-data}, \cod{mssql-tlog} y \cod{mssql-backup}: datos y copias de SQL Server.
+      \item \cod{ticket-uploads}: fotografías adjuntas.
+    \end{itemize}
+  \item \textbf{Orden de arranque}: \cod{mssql-volumes} $\rightarrow$ \cod{mssql} $\rightarrow$ \cod{mssql-init} $\rightarrow$ auth y catalog $\rightarrow$ ticket $\rightarrow$ gateway $\rightarrow$ frontend. Cada paso espera a que el anterior esté \emph{healthy}.
+  \item \textbf{Límites de recursos}:
+    \begin{itemize}
+      \item SQL Server: 3\,GiB y 2 CPU.
+      \item Cada microservicio: 512\,MiB y 1 CPU.
+      \item Gateway: 256\,MiB y 0,5 CPU.
+      \item Frontend: 128\,MiB y 0,5 CPU.
+    \end{itemize}
+  \item \textbf{Configuración común de los contenedores}: \cod{NODE\_ENV=production}, \cod{no-new-privileges},
+        reinicio \cod{unless-stopped} y logs \cod{json-file} rotados (5 archivos de 20\,MB).
+\end{itemize}
+
+% =====================================================================
+\chapter{Tecnologías y versiones}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{4.4cm}P{3.6cm}L@{}}
+\toprule
+\cabecera \textbf{Tecnología} & \textbf{Versión} & \textbf{Uso} \\
+\midrule
+Node.js & 22.23.4 LTS & Ejecución. Los 3 microservicios usan \emph{slim} (Prisma falla en alpine); gateway y compilación del frontend usan \emph{alpine} \\
+TypeScript & 5.7 & Lenguaje de backend y frontend \\
+Express & 4.21 & Servidores HTTP \\
+http-proxy-middleware & 3.0 & Reenvío en el gateway \\
+Prisma ORM & 5.22.0 & Acceso a datos y sincronización del esquema \\
+SQL Server & 2022 CU27-GDR1 (fijado por digest) & Base de datos \\
+React & 18.3.1 & Interfaz \\
+Vite & 5.4.11 & Compilación del frontend \\
+Tailwind CSS & 3.4.16 & Estilos \\
+Capacitor & 8.5.1 (push 8.1.2) & Aplicación Android \\
+multer & 1.4.5 & Recepción de imágenes \\
+nodemailer & 8.0 & Envío de correo SMTP \\
+firebase-admin & 14.3 & Notificaciones push (FCM) \\
+nginx & 1.28.3 (alpine) & Servidor del frontend; el del host hace de proxy TLS \\
+Docker Engine / Compose & $\geq$ 28 / v2 & Contenedores \\
+Restic + Backblaze B2 & Restic 0.18.0 (en contenedor) & Copia externa cifrada \\
+Jest & 29.7 & Pruebas unitarias de backend \\
+\cod{node:test} & integrado en Node & Pruebas unitarias del frontend \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{nota}
+La imagen de SQL Server del servidor está fijada a una actualización acumulativa concreta y a
+su \emph{digest} SHA-256 en \ruta{deploy/server/compose.yaml}. Así, una reinstalación usa
+exactamente la misma versión. El entorno de laboratorio usa la etiqueta \cod{2022-latest}.
+\end{nota}
+
+\section{Estructura del repositorio}
+\begin{lstlisting}
+servicedesk-microservices/
+|-- api-gateway/        Gateway Express
+|-- auth-service/       Servicio de autenticación (prisma/, src/, tests/)
+|-- catalog-service/    Catálogo, ubicaciones y base de conocimiento
+|-- ticket-service/     Tickets, adjuntos, reportes y notificaciones
+|-- frontend/           React + Vite + Capacitor (android/)
+|-- deploy/
+|   |-- server/         compose.yaml y mssql-init/ del servidor nuevo
+|   |-- nginx/          Plantillas de nginx del host (HTTP inicial y TLS)
+|   |-- systemd/        Servicios y timers de backup y alertas
+|   |-- backup/         Plantilla backup.env (credenciales de B2, fuera del .env)
+|   |-- backup-lab/     Laboratorio MinIO para probar las copias externas
+|   `-- certbot/, docker/, logrotate/, ssh/   Ajustes del host
+|-- scripts/            Instalación, backups, operación y pruebas
+|-- docs/               Documentación técnica
+|-- archive/            Material retirado (PostgreSQL, frontend antiguo); no se usa
+|-- compose.yaml        Entorno de laboratorio local (con .env.mssql)
+|-- docker-compose.prod-mssql.yml   Compose del VPS anterior (solo referencia)
+`-- .env.example        Plantilla de configuración (sin valores reales)
+\end{lstlisting}
+La carpeta \ruta{release/}, donde \cod{build-server-package.sh} deja los paquetes, no se versiona.
+
+% =====================================================================
+\chapter{Modelo de datos}\label{cap:datos}
+
+Cada servicio tiene su base de datos y su usuario de SQL Server, con permisos solo
+sobre esa base. Las relaciones entre servicios se hacen por identificador, por ejemplo
+\cod{userId} o \cod{serviceId}, \emph{sin} claves foráneas entre bases. El esquema se
+define en \ruta{<servicio>/prisma/schema.prisma}; existe también \ruta{schema.mssql.prisma}, idéntico,
+que el \cod{Dockerfile.mssql} copia sobre el anterior al compilar la imagen.
+
+\section{auth\_db}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{2.8cm}L@{}}
+\toprule
+\cabecera \textbf{Tabla} & \textbf{Campos principales} \\
+\midrule
+\cod{users} & id, email, name, role, microsoftId, passwordHash, mustChangePassword, block, createdAt, updatedAt \\
+\cod{sessions} & id, userId, tokenHash (SHA-256 del JWT), authProvider, expiresAt, revokedAt, createdAt \\
+\cod{auth\_logs} & id, userId, userEmail, userName, endpoint, authProvider, accessDate \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{catalog\_db}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{3.6cm}L@{}}
+\toprule
+\cabecera \textbf{Tabla} & \textbf{Campos principales} \\
+\midrule
+\cod{services} & id, name, description, levelEntry, responsibleArea, isActive \\
+\cod{routing\_rules} & id, serviceId, levelEntry, priorityHigh, priorityCritical, isCritical \\
+\cod{locations} & id, name, isActive \\
+\cod{knowledge\_articles} & id, title, problemDescription, solution, serviceId, createdByUserId, isActive \\
+\cod{knowledge\_keywords} & id, articleId, keyword \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{ticket\_db}
+\begin{longtable}{@{}P{3.7cm}p{11.3cm}@{}}
+\toprule
+\cabecera \textbf{Tabla} & \textbf{Campos principales} \\
+\midrule
+\endhead
+\cod{tickets} & id, number, userId, userName, userEmail, serviceId, serviceName, detail, location, status, priority, responsibleArea, assignmentStatus, assignedTechnicianId, assignedTechnicianName, acceptedAt, resolvedAt, resolvedById, resolvedByName, knowledgeArticleId, resolutionSummary, levelAssigned \\
+\cod{ticket\_events} & id, ticketId, action, title, previousLevel/newLevel (heredados), previousStatus/newStatus, previousArea/newArea, previousTechnicianId/newTechnicianId, reason, workDone, description, visibility, performedBy, performedByName, createdAt \\
+\cod{attachments} & id, ticketId, filePath, imageUrl, storageProvider, fileSize, mimeType, createdAt \\
+\cod{acceptance\_terms} & version, title, text, sha256, createdAt \\
+\cod{solution\_acceptances} & id, code, ticketId, decision, userId, userName, userEmail, userRole, decidedAt, termsVersion, termsSha256, solutionEventId, solutionSummary, technicianId, technicianName, reason \\
+\cod{email\_outbox} & id, ticketId, to, subject, htmlBody, textBody, eventType, status, attempts, lastError, sentAt \\
+\cod{device\_tokens} & id, userId, token, platform, deviceId, appVersion, isActive, lastSeenAt \\
+\bottomrule
+\end{longtable}
+
+\begin{aviso}[Registros inmutables]
+\cod{solution\_acceptances} y \cod{acceptance\_terms} están protegidas en la base de datos con
+los disparadores \cod{trg\_solution\_acceptances\_immutable} y \cod{trg\_acceptance\_terms\_immutable}
+(\cod{INSTEAD OF UPDATE, DELETE}), que ticket-service crea o actualiza en cada arranque. Ni la aplicación
+ni un usuario con acceso a SQL pueden modificar o borrar las constancias ni los términos publicados.
+Si el texto de una versión de los términos cambia, ticket-service deshabilita las aceptaciones
+hasta que se publique una versión nueva.
+
+\cod{ticket\_events} es un historial de \emph{solo inserción}: la aplicación nunca actualiza ni borra
+eventos, y toda corrección se registra como un evento nuevo. Esta tabla \textbf{no} tiene disparador
+de inmutabilidad en la base de datos.
+\end{aviso}
+
+\section{Valores de dominio}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{3.4cm}L@{}}
+\toprule
+\cabecera \textbf{Concepto} & \textbf{Valores} \\
+\midrule
+Estado del ticket & \cod{abierto}, \cod{en\_proceso}, \cod{escalado}, \cod{pendiente\_validacion}, \cod{resuelto}, \cod{cerrado} \\
+Prioridad & \cod{baja}, \cod{media}, \cod{alta}, \cod{critica} \\
+Área responsable & \cod{TECHNICIANS} (técnicos), \cod{DTIC} \\
+Rol & \cod{admin}, \cod{technician}, \cod{dtic}, \cod{user} \\
+Bloque & \cod{BLOQUE\_1}, \cod{BLOQUE\_2} (solo técnicos) \\
+Estado de asignación & \cod{unassigned}, \cod{available}, \cod{accepted}, \cod{assigned\_by\_admin} \\
+Acción de evento & \cod{CREATED}, \cod{CATEGORIZED}, \cod{AVAILABLE}, \cod{ACCEPTED}, \cod{ASSIGNED}, \cod{CONTRIBUTED}, \cod{STATUS\_CHANGED}, \cod{ESCALATED}, \cod{REASSIGNED}, \cod{COMMENTED}, \cod{RESOLVED}, \cod{USER\_ACCEPTED}, \cod{USER\_REJECTED\_RESOLUTION}, \cod{CLOSED} \\
+Visibilidad de evento & \cod{public}, \cod{internal} \\
+Decisión de validación & \cod{ACCEPTED}, \cod{REJECTED} \\
+Estado de correo & \cod{pending}, \cod{sent}, \cod{failed} \\
+Número de ticket & \cod{TK-AAAAMMDD-NNN}, consecutivo por día \\
+Código de constancia & \cod{VD-AAAAMMDD-XXXXXXXX} (8 caracteres hexadecimales aleatorios) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Aplicación del esquema y \emph{seed}}
+El proyecto \textbf{no usa carpetas de migraciones}. Al arrancar, el \emph{entrypoint} de cada
+microservicio (\ruta{<servicio>/docker/entrypoint.mssql.sh}) ejecuta \cod{prisma db push}, que
+sincroniza la base con \ruta{schema.prisma} de forma idempotente:
+\begin{itemize}
+  \item En el servidor, \cod{PRISMA\_ACCEPT\_DATA\_LOSS=false}: si un cambio de esquema implicara borrar
+        columnas o datos, el arranque \textbf{falla} en lugar de aplicarlo. Ese caso exige una migración manual
+        planificada y un backup previo.
+  \item En el laboratorio, la variable vale \cod{true} por defecto (\cod{--accept-data-loss}).
+\end{itemize}
+
+El \emph{seed} lo controla \cod{RUN\_SEED}. En el servidor vale \cod{false} y el instalador lo activa
+\textbf{solo} en el primer arranque del modo limpio; en el modo de restauración nunca se siembra.
+\begin{itemize}
+  \item \textbf{catalog-service}: crea el catálogo de servicios, sus reglas, las ubicaciones y los
+        artículos iniciales de conocimiento.
+  \item \textbf{auth-service}: \textbf{no crea usuarios}. Las cuentas de prueba solo se crean con
+        \cod{SEED\_DEMO\_USERS=true}, si existe el archivo local \ruta{prisma/seed.demo.ts} y \cod{NODE\_ENV}
+        no es \cod{production}. El administrador inicial lo crea el instalador con \cod{manage-user.sh bootstrap-admin}.
+  \item \textbf{ticket-service}: no tiene seed. Al arrancar publica la versión vigente de los términos
+        de aceptación y crea los disparadores de inmutabilidad.
+\end{itemize}
+
+% =====================================================================
+\chapter{Roles, áreas y bloques}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{2.2cm}P{2.9cm}L@{}}
+\toprule
+\cabecera \textbf{Rol} & \textbf{Áreas que atiende} & \textbf{Capacidades} \\
+\midrule
+\cod{user} & — & Crear tickets, ver los suyos y aceptar o rechazar la solución de sus tickets. \\
+\cod{technician} & TECHNICIANS & Ver tickets disponibles de su área, aceptarlos, aportar, escalar y resolver. Pertenece a un bloque. \\
+\cod{dtic} & DTIC & Lo mismo que el técnico, para los tickets escalados a la DTIC. \\
+\cod{admin} & Ambas & Asignar tickets a técnicos, estadísticas, historial completo, reportes, catálogo, ubicaciones, base de conocimiento y bloques. No acepta tickets directamente: los asigna. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{itemize}
+  \item Los roles antiguos \cod{tech\_n1}/\cod{tech\_n2} se interpretan como \cod{technician}, y \cod{tech\_n3}/\cod{tech\_n4} como \cod{dtic}.
+  \item Los \textbf{bloques} agrupan a los técnicos por zona física del campus y sirven para los reportes por bloque. Se asignan desde la pantalla \emph{Bloques} o con \cod{manage-user.sh set-block}.
+  \item Un cambio de rol revoca las sesiones activas del usuario.
+\end{itemize}
+
+% =====================================================================
+\chapter{Ciclo de vida del ticket}\label{cap:flujo}
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[font=\small,
+  est/.style={draw=utaRojo,rounded corners=8pt,minimum height=0.85cm,minimum width=2.6cm,align=center,fill=white},
+  f/.style={-{Stealth[length=2.2mm]},line width=0.6pt},
+  node distance=1.4cm]
+  \node[est] (ab) {abierto};
+  \node[est,right=of ab] (ep) {en\_proceso};
+  \node[est,right=of ep] (pv) {pendiente\_\\validacion};
+  \node[est,below=1.3cm of pv] (ce) {cerrado};
+  \node[est,below=1.3cm of ep] (es) {escalado};
+  \draw[f] (ab) -- node[above,font=\footnotesize]{aceptar} (ep);
+  \draw[f] (ep) -- node[above,font=\footnotesize]{resolver} (pv);
+  \draw[f] (pv) -- node[right,font=\footnotesize]{el creador acepta} (ce);
+  \draw[f] (pv.north) to[bend right=40] node[above,font=\footnotesize]{el creador rechaza (con motivo)} (ep.north);
+  \draw[f] ([xshift=-4mm]ep.south) -- node[left,font=\footnotesize]{escalar} ([xshift=-4mm]es.north);
+  \draw[f] ([xshift=4mm]es.north) -- node[right,font=\footnotesize,align=left]{el área nueva\\acepta} ([xshift=4mm]ep.south);
+\end{tikzpicture}
+\caption{Estados principales del ticket.}
+\end{figure}
+
+El estado \cod{resuelto} se conserva por compatibilidad con tickets anteriores a la validación
+digital: los tickets nuevos pasan de \cod{pendiente\_validacion} a \cod{cerrado}.
+
+\begin{enumerate}
+  \item \textbf{Creación}: el usuario elige el servicio, describe el problema, indica la ubicación
+        (por ejemplo, un laboratorio) y adjunta hasta 5 imágenes JPG, PNG o WebP de 5\,MB como máximo.
+        Las fotografías HEIC se rechazan con un mensaje que indica cómo cambiar el formato.
+        El área responsable y la prioridad se toman de las reglas del catálogo.
+  \item \textbf{Aceptación por el técnico}: el ticket aparece como \emph{disponible} para el personal del área.
+        Un técnico lo acepta y queda \cod{en\_proceso}. El administrador puede asignarlo directamente
+        a un técnico concreto.
+  \item \textbf{Aportes}: el técnico registra el trabajo realizado sin cambiar el estado.
+  \item \textbf{Escalamiento}: el técnico escala el ticket a la otra área con un motivo. El ticket pasa
+        a \cod{escalado}, el técnico queda liberado y el ticket vuelve a la bandeja de disponibles del área
+        nueva (aunque el área no cambie). Cuando alguien de esa área lo acepta, vuelve a \cod{en\_proceso}.
+  \item \textbf{Resolución}: el técnico describe la solución y puede vincular un artículo de la
+        base de conocimiento, cuyo nombre aparece en los reportes como «Solución utilizada».
+        El ticket pasa a \cod{pendiente\_validacion}.
+  \item \textbf{Validación digital}: \emph{solo} el usuario que creó el ticket puede decidir.
+        \begin{itemize}
+          \item \textbf{Acepta}: el ticket pasa a \cod{cerrado}.
+          \item \textbf{Rechaza}: debe escribir un motivo. El ticket vuelve a \cod{en\_proceso} con el mismo técnico, que debe registrar una nueva solución. El ciclo se repite hasta que se acepte.
+        \end{itemize}
+        Cada decisión genera una constancia en \cod{solution\_acceptances} con un código único, la fecha,
+        la versión de los términos aceptados y su huella SHA-256, y el resumen de la solución
+        evaluada.
+\end{enumerate}
+
+Cada paso añade un evento a \cod{ticket\_events} dentro de la misma transacción que cambia el ticket.
+El historial completo se consulta en la ventana de historial de cada ticket y en \emph{Historial}
+del administrador, desde donde también se imprime.
+
+% =====================================================================
+\chapter{API REST}\label{cap:api}
+
+Todas las rutas se publican bajo el dominio del sistema con el prefijo de la sección
+\ref{sec:gateway}. Salvo que se indique lo contrario, requieren la cabecera
+\cod{Authorization: Bearer <JWT>}. Las respuestas son JSON.
+
+\begin{center}
+\small
+\begin{tabularx}{\linewidth}{@{}P{2.3cm}L@{}}
+\toprule
+\cabecera \textbf{Acceso} & \textbf{Significado} \\
+\midrule
+Público & No requiere sesión \\
+Sesión & Cualquier usuario autenticado \\
+Personal & \cod{admin}, \cod{technician} o \cod{dtic} \\
+Técnico & \cod{technician} o \cod{dtic}, según el área del ticket \\
+Admin & Solo \cod{admin} \\
+Creador & Solo el usuario que creó el ticket \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Autenticación — \cod{/api/auth}}
+\begin{longtable}{@{}P{1.7cm}P{5.3cm}P{1.9cm}p{5.6cm}@{}}
+\toprule
+\cabecera \textbf{Método} & \textbf{Ruta} & \textbf{Acceso} & \textbf{Descripción} \\
+\midrule
+\endhead
+POST & \cod{/login} & Público & Inicio de sesión local. Limitado por cuenta y por IP \\
+GET & \cod{/microsoft} & Público & Inicia el SSO de Microsoft Entra ID \\
+GET & \cod{/microsoft/callback}, \cod{/callback} & Público & Retorno de Microsoft. Valida el \cod{state} y entrega un código de un solo uso \\
+POST & \cod{/sso/exchange} & Público & Canjea el código de un solo uso por el JWT \\
+GET & \cod{/config} & Público & Métodos de inicio de sesión disponibles \\
+GET & \cod{/me} & Sesión & Datos del usuario actual \\
+POST & \cod{/change-password} & Sesión & Cambio de contraseña. Revoca las demás sesiones \\
+POST & \cod{/logout} & Sesión & Revoca la sesión actual \\
+POST & \cod{/verify} & Sesión & Verifica el token (uso entre servicios) \\
+POST & \cod{/users/lookup} & Personal & Datos básicos de hasta 200 usuarios por id \\
+GET & \cod{/technicians} & Admin & Lista de técnicos (filtros \cod{role} y \cod{block}) \\
+PATCH & \cod{/technicians/:id/block} & Admin & Asigna o retira el bloque de un técnico \\
+POST & \cod{/dev-login}, \cod{/microsoft-simulate} & — & Solo desarrollo. En producción responden \textbf{404} \\
+\bottomrule
+\end{longtable}
+
+\section{Catálogo — \cod{/api/catalog} y \cod{/api/knowledge}}
+\begin{longtable}{@{}P{1.7cm}P{5.3cm}P{1.9cm}p{5.6cm}@{}}
+\toprule
+\cabecera \textbf{Método} & \textbf{Ruta} & \textbf{Acceso} & \textbf{Descripción} \\
+\midrule
+\endhead
+GET & \cod{/api/catalog/services}, \cod{/services/:id} & Público & Servicios activos \\
+POST\newline PATCH\newline DELETE & \cod{/api/catalog/services[/:id]} & Admin & Mantenimiento del catálogo \\
+GET & \cod{/api/catalog/locations} & Público & Ubicaciones activas \\
+POST\newline PUT\newline DELETE & \cod{/api/catalog/locations[/:id]} & Admin & Mantenimiento de ubicaciones \\
+GET & \cod{/api/knowledge/search} & Personal & Búsqueda de artículos \\
+GET & \cod{/api/knowledge/:id} & Personal & Detalle de un artículo \\
+POST & \cod{/api/knowledge} & Personal & Crear un artículo \\
+GET & \cod{/api/knowledge/}\allowbreak\cod{admin/list} & Admin & Lista completa, incluidos los inactivos \\
+PUT\newline DELETE & \cod{/api/knowledge/:id} & Admin & Editar o desactivar un artículo \\
+\bottomrule
+\end{longtable}
+
+\section{Tickets — \cod{/api/tickets}}
+\begin{longtable}{@{}P{1.7cm}P{5.3cm}P{1.9cm}p{5.6cm}@{}}
+\toprule
+\cabecera \textbf{Método} & \textbf{Ruta} & \textbf{Acceso} & \textbf{Descripción} \\
+\midrule
+\endhead
+POST & \cod{/} & Sesión & Crear un ticket (\cod{multipart/form-data} con imágenes) \\
+GET & \cod{/my} & Sesión & Tickets creados por el usuario \\
+GET & \cod{/:id} & Sesión & Detalle del ticket, si el usuario tiene acceso a él \\
+GET & \cod{/history/:id} & Sesión & Historial de eventos \\
+GET & \cod{/:id/attachments/}\allowbreak\cod{:attachmentId} & Sesión & Descarga autenticada de una imagen \\
+GET & \cod{/available} & Personal & Tickets sin asignar de las áreas del usuario \\
+POST & \cod{/:id/accept} & Técnico & Aceptar un ticket. El administrador debe usar la asignación \\
+GET & \cod{/accepted}, \cod{/my-assigned} & Personal & Tickets aceptados o asignados \\
+POST & \cod{/:id/contributions} & Técnico asignado & Registrar un aporte \\
+PUT & \cod{/:id/escalate} & Técnico asignado & Escalar a la otra área con motivo \\
+POST & \cod{/:id/resolve} & Técnico asignado & Registrar la solución \\
+GET & \cod{/acceptance-terms} & Sesión & Texto vigente de los términos de aceptación \\
+GET & \cod{/:id/acceptances} & Sesión & Constancias de aceptación o rechazo \\
+POST & \cod{/:id/user-accept} & Creador & Aceptar la solución \\
+POST & \cod{/:id/user-reject} & Creador & Rechazar la solución (motivo obligatorio) \\
+\bottomrule
+\end{longtable}
+
+\section{Administración — \cod{/api/admin}}
+\begin{longtable}{@{}P{1.7cm}P{5.3cm}P{1.9cm}p{5.6cm}@{}}
+\toprule
+\cabecera \textbf{Método} & \textbf{Ruta} & \textbf{Acceso} & \textbf{Descripción} \\
+\midrule
+\endhead
+POST & \cod{/tickets/:id/assign} & Admin & Asignar un ticket a un técnico \\
+GET & \cod{/stats/tickets} & Admin & Estadísticas generales \\
+GET & \cod{/technicians}, \cod{/technicians/summary} & Admin & Técnicos y su carga \\
+GET & \cod{/tickets/history} & Admin & Historial filtrable de tickets \\
+GET & \cod{/reports/block} & Admin & Reporte por bloque y periodo \\
+GET & \cod{/reports/technicians/}\allowbreak\cod{:technicianId} & Admin & Reporte por técnico y periodo \\
+GET & \cod{/email-outbox} & Admin & Cola de correos \\
+POST & \cod{/email-outbox/process} & Admin & Procesar la cola de correos manualmente \\
+\bottomrule
+\end{longtable}
+
+\section{Notificaciones — \cod{/api/notifications}}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{1.7cm}P{5.3cm}P{1.9cm}L@{}}
+\toprule
+\cabecera \textbf{Método} & \textbf{Ruta} & \textbf{Acceso} & \textbf{Descripción} \\
+\midrule
+POST & \cod{/register}, \cod{/unregister} & Sesión & Registrar o retirar el token push del dispositivo \\
+GET & \cod{/devices} & Sesión & Dispositivos registrados del usuario \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Rutas retiradas}
+Las rutas del modelo anterior por niveles responden \textbf{410 Gone} con un mensaje que indica
+qué usar en su lugar:
+\cod{/api/routing/assign}, \cod{/api/routing/preview}, \cod{GET /api/tickets},
+\cod{PUT /api/tickets/escalate}, \cod{GET /api/tickets/level} y
+\cod{PATCH /api/tickets/:id/status}.
+
+\section{Códigos de respuesta habituales}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{1.6cm}L@{}}
+\toprule
+\cabecera \textbf{Código} & \textbf{Situación} \\
+\midrule
+400 & Datos inválidos, archivo no permitido o código SSO inválido o caducado \\
+401 & Sin token, token caducado o sesión revocada \\
+403 & Rol sin permiso, o \cod{password\_change\_required} si el usuario debe cambiar su contraseña temporal \\
+404 & Recurso inexistente, o ruta de desarrollo en producción \\
+409 & Conflicto de estado (por ejemplo, aceptar un ticket ya tomado) \\
+410 & Ruta retirada \\
+429 & Demasiados intentos de inicio de sesión \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% =====================================================================
+\chapter{Frontend y aplicación móvil}
+
+\section{Pantallas}
+\begin{longtable}{@{}P{4.3cm}P{2.3cm}p{8.0cm}@{}}
+\toprule
+\cabecera \textbf{Ruta} & \textbf{Rol} & \textbf{Pantalla} \\
+\midrule
+\endhead
+\cod{/login} & Público & Inicio de sesión (Microsoft o cuenta local) \\
+\cod{/auth/callback}, \cod{/auth/success} & Público & Retorno del SSO y canje del código \\
+\cod{/cambiar-contrasena} & Sesión & Cambio obligatorio de una contraseña temporal \\
+\cod{/} & Sesión & Redirige al inicio que corresponde al rol \\
+\cod{/tickets/nuevo} & Sesión & Crear un ticket \\
+\cod{/mis-tickets} & Sesión & Tickets propios, con aceptación o rechazo de la solución \\
+\cod{/tickets/:id} & Sesión & Enlace directo (por ejemplo, desde una notificación push). Redirige al listado del rol con \cod{?openTicket=<id>}, que abre el ticket \\
+\cod{/panel} & Personal & Tickets disponibles \\
+\cod{/mis-aceptados} & Personal & Tickets en atención \\
+\cod{/conocimiento} & Personal & Base de conocimiento \\
+\cod{/admin/stats} & Admin & Estadísticas \\
+\cod{/admin/historial} & Admin & Historial de tickets e impresión \\
+\cod{/admin/bloques} & Admin & Asignación de técnicos a bloques \\
+\cod{/admin/reportes} & Admin & Reportes por bloque y por técnico \\
+\cod{/admin/catalogo} & Admin & Catálogo de servicios \\
+\cod{/admin/conocimiento} & Admin & Mantenimiento de artículos \\
+\cod{/admin/ubicaciones} & Admin & Ubicaciones y laboratorios \\
+\bottomrule
+\end{longtable}
+
+El detalle de un ticket (imágenes, historial y validación) se muestra en ventanas modales dentro de
+los listados, no en una página propia. Cualquier otra ruta redirige a \cod{/}. Las imágenes se
+comprimen en el navegador antes de subirlas y se muestran con una descarga autenticada.
+
+\section{Reportes e impresión}
+La pantalla \emph{Reportes} reúne en un solo formulario el reporte por \textbf{bloque} y el
+reporte por \textbf{técnico}, con filtros de periodo y, para los bloques, de estado y servicio.
+El documento conserva el formato institucional e incluye por cada ticket:
+\begin{itemize}
+  \item la solución utilizada y la ubicación o laboratorio;
+  \item la validación digital del usuario (aceptado, rechazado o pendiente) con su código de constancia.
+\end{itemize}
+
+El documento se genera en \ruta{frontend/src/lib/institutionalReport.ts}. Para imprimir se usa un
+\emph{iframe} oculto en la misma página, así que se abre un único diálogo de impresión sin ventanas
+nuevas. Desde ese diálogo también se guarda en PDF. Las tablas tienen anchos de columna fijos y
+evitan los cortes de fila entre páginas.
+
+\section{Aplicación Android}
+La aplicación se construye con Capacitor a partir del mismo frontend
+(\ruta{frontend/android/}). Las notificaciones push usan Firebase Cloud Messaging. El archivo
+\cod{google-services.json} y el almacén de claves de firma \textbf{no} se guardan en el repositorio.
+
+\begin{bash}
+cd frontend
+npm ci && npm run build
+npx cap sync android
+# Abrir en Android Studio y generar el APK o AAB firmado
+npx cap open android
+\end{bash}
+
+% =====================================================================
+\chapter{Autenticación y seguridad}\label{cap:seguridad}
+
+\section{Inicio de sesión}
+\begin{itemize}
+  \item \textbf{Microsoft Entra ID (SSO)}: es el método principal para la comunidad universitaria. Solo
+        se admiten cuentas del dominio configurado en \cod{ALLOWED\_DOMAIN}. El servidor protege el retorno con un
+        valor \cod{state} guardado en una cookie y no pasa el JWT en la URL. Entrega un código de un
+        solo uso que caduca a los 60 segundos (se guarda solo su hash), y el frontend lo canjea en \cod{POST /sso/exchange}.
+  \item \textbf{Cuenta local}: para el personal que lo necesite. Las contraseñas se guardan con
+        \emph{bcrypt} (12 rondas). Los hashes SHA-256 heredados de versiones antiguas se aceptan una vez
+        y se convierten a bcrypt tras el siguiente inicio de sesión correcto.
+\end{itemize}
+
+\section{Sesiones}
+El JWT caduca según \cod{JWT\_EXPIRES\_IN} (8 horas por defecto). En la tabla \cod{sessions} se
+guarda únicamente el hash SHA-256 de cada token. Así, una sesión se puede revocar en el cierre de sesión, en un cambio de
+rol o de contraseña, y los registros caducados se eliminan pasados \cod{SESSION\_RETENTION\_DAYS} días (7 por defecto).
+Como catalog-service y ticket-service consultan \cod{/auth/verify} en cada petición, la revocación
+tiene efecto inmediato en todo el sistema.
+
+\section{Política de contraseñas}
+\begin{itemize}
+  \item Siempre: mayúsculas, minúsculas, números y un carácter especial.
+  \item Al menos \textbf{12 caracteres} al cambiar la contraseña o al crear una cuenta local con \cod{manage-user.sh}
+        (la validación general admite 8, pero esos dos caminos exigen 12).
+  \item No puede contener espacios al inicio o al final, ser igual al correo ni estar en la lista de contraseñas comunes.
+  \item Las contraseñas temporales (administrador inicial y restablecimientos) obligan a cambiarlas en el primer acceso.
+        Mientras tanto, la API responde \cod{403 password\_change\_required}.
+\end{itemize}
+
+\section{Protección contra fuerza bruta}
+\begin{itemize}
+  \item 5 fallos seguidos en una cuenta producen una espera progresiva de 1, 2, 4\ldots{} minutos, hasta un máximo de 15.
+        Un acceso correcto reinicia el contador.
+  \item 20 fallos desde una misma IP en 15 minutos bloquean esa IP durante 15 minutos.
+  \item Antes de llegar a la aplicación, nginx del host limita \cod{/api/auth/login} a 10 peticiones por minuto por IP.
+  \item El contador vive en la memoria de auth-service: se reinicia si el contenedor se reinicia.
+  \item El mensaje de error es el mismo exista o no la cuenta. Los eventos se registran como
+        \cod{[security]}, con el correo enmascarado y sin contraseñas.
+\end{itemize}
+
+\section{Otras medidas}
+\begin{itemize}
+  \item Las imágenes se sirven solo mediante una descarga autenticada, nunca como archivos estáticos públicos.
+  \item Las rutas de desarrollo (\cod{dev-login}, \cod{microsoft-simulate}) responden 404 en producción.
+        El \emph{seed} no crea cuentas. Las cuentas de prueba solo existen en un archivo local que Git no sigue.
+  \item Cada servicio se conecta a SQL Server con un \emph{login} que solo tiene permisos sobre su base.
+  \item En el host: UFW (22, 80, 443), SSH solo con clave, \cod{no-new-privileges} y rotación de logs en Docker.
+        Ningún contenedor publica puertos en interfaces públicas.
+  \item Los secretos solo existen en \ruta{deploy/server/.env} (permisos 600), que se genera en el servidor
+        con \cod{--generate-secrets} y nunca se versiona.
+\end{itemize}
+
+% =====================================================================
+\chapter{Notificaciones}
+\begin{itemize}
+  \item \textbf{Correo}: los eventos del ticket (creación, aceptación, asignación por el administrador, aporte,
+        escalamiento, solución pendiente de validación y rechazo de la solución) encolan un mensaje en
+        \cod{email\_outbox} (\cod{TICKET\_CREATED}, \cod{TICKET\_ACCEPTED}, \cod{TICKET\_ASSIGNED},
+        \cod{TICKET\_CONTRIBUTION}, \cod{TICKET\_ESCALATED}, \cod{TICKET\_PENDING\_ACCEPTANCE},
+        \cod{TICKET\_USER\_REJECTED}), que un proceso envía con reintentos. Con
+        \cod{EMAIL\_SEND\_MODE=log}, los correos solo se escriben en el log, lo que sirve para pruebas. Con \cod{smtp} se
+        envían mediante el servidor configurado en \cod{SMTP\_*}.
+  \item \textbf{Push}: \cod{FCM\_MODE} admite \cod{off} (no envía nada), \cod{log} (solo registra) y
+        \cod{firebase} (envía a los dispositivos registrados en \cod{device\_tokens}). Si se elige
+        \cod{firebase} sin credenciales, el servicio pasa a \cod{log} y lo avisa en el log.
+  \item \textbf{Alertas de operación}: los fallos de backup llaman a \cod{servicedesk-alert@} (\ruta{scripts/operations/alert.sh}), que
+        escribe en el journal y en \ruta{/var/log/servicedesk-alerts.log}, y puede enviar un correo
+        (\cod{BACKUP\_ALERT\_EMAIL}) o llamar a un \emph{webhook} (\cod{BACKUP\_ALERT\_WEBHOOK\_URL}).
+        Se recomienda además un latido externo (\cod{BACKUP\_HEARTBEAT\_URL} en \ruta{backup.env}) que avise aunque el servidor entero caiga.
+\end{itemize}
+
+% =====================================================================
+\chapter{Configuración}\label{cap:configuracion}
+
+La configuración del servidor está en \ruta{deploy/server/.env}, creado a partir de
+\ruta{.env.example}. Esta tabla lista las variables, \textbf{sin valores secretos}.
+
+\begin{longtable}{@{}P{5.6cm}p{9.0cm}@{}}
+\toprule
+\cabecera \textbf{Variable} & \textbf{Uso} \\
+\midrule
+\endhead
+\cod{PUBLIC\_DOMAIN} & Dominio público del sistema \\
+\cod{PUBLIC\_SCHEME} & \cod{https} por defecto. Forma, con el dominio, la URL del frontend y de la API \\
+\cod{GATEWAY\_BIND\_PORT}, \cod{FRONTEND\_BIND\_PORT} & Puertos locales (8080 y 3000), solo en 127.0.0.1 \\
+\cod{SERVER\_PURPOSE} & \cod{pruebas} o \cod{produccion} (valor por defecto) \\
+\cod{MSSQL\_PID} & Edición de SQL Server (obligatoria, sin valor por defecto). \cod{Developer} y \cod{Evaluation} quedan \textbf{bloqueadas} si \cod{SERVER\_PURPOSE=produccion} \\
+\cod{MSSQL\_IMAGE} & Solo si se quiere sustituir la imagen fijada de SQL Server \\
+\cod{MSSQL\_MEMORY\_LIMIT\_MB}, \cod{MSSQL\_CONTAINER\_MEMORY}, \cod{MSSQL\_CPUS} & Recursos de SQL Server \\
+\cod{MSSQL\_SA\_PASSWORD} & Contraseña de \cod{sa} (generada) \\
+\cod{AUTH\_DB\_*}, \cod{CATALOG\_DB\_*}, \cod{TICKET\_DB\_*} & Nombre, usuario y contraseña de cada base (contraseñas generadas) \\
+\cod{JWT\_SECRET}, \cod{JWT\_EXPIRES\_IN} & Firma y duración de los tokens \\
+\cod{MICROSOFT\_CLIENT\_ID}, \cod{\_TENANT\_ID}, \cod{\_CLIENT\_SECRET}, \cod{\_REDIRECT\_URI} & Registro de la aplicación en Microsoft Entra ID \\
+\cod{ALLOWED\_DOMAIN} & Dominio de correo admitido \\
+\cod{ADMIN\_EMAILS} & Correos que reciben el rol \cod{admin} al iniciar sesión con Microsoft \\
+\cod{INITIAL\_ADMIN\_EMAIL}, \cod{INITIAL\_ADMIN\_NAME} & Administrador inicial (solo instalación limpia). No hay contraseña en el \cod{.env} \\
+\cod{INITIAL\_ADMIN\_SSO\_ONLY} & \cod{true}: el administrador inicial solo entra con Microsoft (exige el SSO configurado) \\
+\cod{SESSION\_RETENTION\_DAYS} & Días que se conservan las sesiones caducadas (7) \\
+\cod{AUTH\_DEV\_LOGIN}, \cod{AUTH\_MICROSOFT\_SIMULATE}, \cod{SEED\_DEMO\_USERS} & Solo desarrollo. El compose del servidor las fija en \cod{false} \\
+\cod{RUN\_SEED}, \cod{SERVICEDESK\_VERSION} & Los gestiona el instalador: seed del primer arranque y etiqueta de las imágenes \\
+\cod{EMAIL\_NOTIFICATIONS\_ENABLED}, \cod{EMAIL\_SEND\_MODE}, \cod{SMTP\_*} & Correo \\
+\cod{STORAGE\_MODE}, \cod{CLOUDINARY\_*} & Almacenamiento de imágenes (\cod{local} por defecto) \\
+\cod{FCM\_MODE}, \cod{FCM\_PROJECT\_ID}, \cod{FCM\_CLIENT\_EMAIL}, \cod{FCM\_PRIVATE\_KEY} & Notificaciones push \\
+\cod{BACKUP\_DIR}, \cod{BACKUP\_LOCAL\_KEEP}, \cod{BACKUP\_SQL\_COMPRESSION}, \cod{BACKUP\_REQUIRE\_OFFSITE} & Carpeta, conjuntos locales que se conservan, compresión y obligatoriedad de la copia externa \\
+\cod{BACKUP\_ALERT\_EMAIL}, \cod{BACKUP\_ALERT\_WEBHOOK\_URL} & Destinos de las alertas de backup \\
+\cod{DRILL\_MODE} & Modo del simulacro mensual de restauración \\
+\cod{MSSQL\_HOST\_PORT}, \cod{API\_GATEWAY\_HOST\_PORT}, \cod{FRONTEND\_HOST\_PORT}, \cod{VITE\_API\_URL\_LAB} & Solo laboratorio local (\cod{compose.yaml}); el servidor no las usa \\
+\bottomrule
+\end{longtable}
+
+\begin{aviso}
+Las credenciales de Backblaze B2 y la contraseña del repositorio Restic \textbf{no} van en este
+archivo. Se guardan aparte, en \ruta{/etc/servicedesk/backup.env}, con permisos 600.
+\end{aviso}
+
+% =====================================================================
+\chapter{Requisitos del servidor}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{3.2cm}P{2.0cm}P{2.0cm}P{2.3cm}L@{}}
+\toprule
+\cabecera \textbf{Perfil} & \textbf{vCPU} & \textbf{RAM} & \textbf{Disco} & \textbf{Notas} \\
+\midrule
+Mínimo & 2 & 4 GB & 40 GB & Solo pruebas \\
+Recomendado & 4 & 8 GB & 80 GB & Uso normal \\
+Producción & 4 & 8 GB & 100 GB & SQL Server Express o edición con licencia \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{itemize}
+  \item Ubuntu Server 24.04 LTS, arquitectura x86\_64 (SQL Server no funciona en ARM).
+  \item Docker Engine 28 o superior con Compose v2, instalado desde el repositorio oficial de Docker.
+  \item Un dominio con registro DNS hacia el servidor y los puertos 80 y 443 accesibles desde Internet para Let's Encrypt.
+  \item En reposo, el sistema usa unos 1,6\,GiB de RAM.
+  \item \textbf{Licencia}: la edición Developer solo puede usarse en servidores de pruebas. En producción se usa
+        Express (límite de 10\,GB por base) o una edición con licencia.
+\end{itemize}
+
+% =====================================================================
+\chapter{Instalación en un servidor nuevo}\label{cap:instalacion}
+
+El sistema se distribuye como un paquete \cod{servicedesk-uta-server-<VERSION>.tar.gz}, acompañado de su
+suma SHA-256. Se genera desde el repositorio con:
+\begin{bash}
+scripts/build-server-package.sh <VERSION>
+\end{bash}
+El resultado queda en \ruta{release/}: el \cod{.tar.gz}, su \cod{.sha256}, un \cod{MANIFEST.md} y un
+\cod{FILES.txt} con la lista de archivos. El paquete excluye pruebas, documentación interna, archivos
+\cod{.env} reales, \cod{node\_modules}, Android, copias de seguridad, imágenes subidas y cuentas de
+prueba. Antes de empaquetar, el script aborta si encuentra secretos, claves privadas,
+\cod{google-services.json}, valores de los \cod{.env} locales o referencias a PostgreSQL.
+
+\begin{aviso}[Paquetes generados en Windows]
+Un árbol de trabajo de Windows puede convertir los finales de línea a CRLF, y los scripts \cod{.sh}
+fallan entonces en Linux. Genera el paquete desde un clon con \cod{core.autocrlf=false} y comprueba
+los scripts en un contenedor Ubuntu antes de distribuirlo.
+\end{aviso}
+
+\section{Modos de instalación}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{3.6cm}L@{}}
+\toprule
+\cabecera \textbf{Modo} & \textbf{Cuándo usarlo} \\
+\midrule
+\cod{--mode clean} & Servidor nuevo sin datos. Crea las bases, ejecuta el seed del catálogo y crea el administrador inicial. \\
+\cod{--mode restore --from DIR} & Servidor nuevo a partir de un backup de otro servidor. No ejecuta ningún seed y conserva usuarios, tickets e imágenes. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Pasos}
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Verificar el paquete} en el servidor:
+\begin{bash}
+cd /tmp && sha256sum -c servicedesk-uta-server-<VERSION>.tar.gz.sha256
+\end{bash}
+  \item \textbf{Preparar Ubuntu} (actualizar el sistema y crear un usuario administrativo con clave SSH) e
+        \textbf{instalar Docker Engine y Compose v2} desde el repositorio oficial.
+  \item \textbf{Extraer} el paquete:
+\begin{bash}
+sudo mkdir -p /opt/servicedesk
+sudo tar -xzf /tmp/servicedesk-uta-server-<VERSION>.tar.gz \
+     -C /opt/servicedesk --strip-components=1
+\end{bash}
+  \item \textbf{Configurar} \ruta{deploy/server/.env}. Deja vacías las contraseñas y \cod{JWT\_SECRET}, porque el instalador las genera:
+\begin{bash}
+cd /opt/servicedesk
+sudo cp .env.example deploy/server/.env && sudo chmod 600 deploy/server/.env
+sudo nano deploy/server/.env
+sudo scripts/install-server.sh --mode clean --generate-secrets --dry-run
+\end{bash}
+        El ensayo (\cod{--dry-run}) muestra cada variable como CONFIGURADA, VACÍA o AUSENTE, nunca su valor.
+  \item \textbf{Instalar}:
+\begin{bash}
+# Instalación limpia
+sudo scripts/install-server.sh --mode clean --generate-secrets
+# o bien, restauración desde un backup
+sudo scripts/install-server.sh --mode restore --from /root/restore/<ID> --generate-secrets
+\end{bash}
+  \item \textbf{DNS y HTTPS}: apuntar el dominio al servidor y obtener el certificado con certbot. El instalador
+        deja configurado el \emph{hook} que recarga nginx en cada renovación.
+  \item \textbf{Administrador inicial} (solo en el modo limpio): leer la contraseña temporal una vez y borrar el archivo:
+\begin{bash}
+sudo cat deploy/server/.initial-admin-secret
+sudo shred -u deploy/server/.initial-admin-secret
+\end{bash}
+  \item \textbf{Comprobar}: iniciar sesión, crear un ticket con imagen y ejecutar \cod{server-health.sh}.
+\end{enumerate}
+
+\section{Qué hace el instalador}
+\begin{enumerate}
+  \item \textbf{Preflight}: sistema operativo, arquitectura, RAM, CPU, disco, Docker y Compose.
+  \item \textbf{Configuración}: genera los secretos vacíos, valida las variables y pide confirmar la licencia de SQL Server.
+  \item \textbf{Host}: instala \ruta{/etc/docker/daemon.json} y configura UFW. Endurece SSH \emph{solo} si ya existe una clave autorizada, y lo valida antes con \cod{sshd -t}. Instala también logrotate.
+  \item \textbf{Compilación} de las 5 imágenes.
+  \item \textbf{SQL Server}: lo arranca y \cod{mssql-init} crea las 3 bases con sus logins.
+  \item \textbf{Servicios}: los arranca y espera \cod{6/6 servicios healthy}. En el modo limpio,
+        el primer arranque lleva \cod{RUN\_SEED=true} y después los servicios se recrean sin seed.
+  \item \textbf{Administrador inicial} (modo limpio): ejecuta \cod{manage-user.sh bootstrap-admin} con
+        \cod{INITIAL\_ADMIN\_EMAIL} e \cod{INITIAL\_ADMIN\_NAME}.
+  \item \textbf{Restauración} (modo restore): SHA-256, \cod{RESTORE VERIFYONLY}, \cod{DBCC CHECKDB}, imágenes, re-mapeo de usuarios de base y conteos.
+  \item \textbf{Smoke test}: comprueba que las rutas de desarrollo respondan 404, las retiradas 410 y un código SSO inválido 400.
+  \item \textbf{nginx} y \textbf{systemd}: configuración del proxy y timers de backup.
+\end{enumerate}
+
+\section{Opciones del instalador}
+\begin{longtable}{@{}P{4.6cm}p{10.0cm}@{}}
+\toprule
+\cabecera \textbf{Opción} & \textbf{Efecto} \\
+\midrule
+\endhead
+\cod{--mode clean|restore} & Modo de instalación \\
+\cod{--from DIR} & Carpeta del backup (modo restore) \\
+\cod{--env FILE}, \cod{--project NAME} & Archivo de configuración y nombre del proyecto de Compose \\
+\cod{--generate-secrets} & Genera las contraseñas y el \cod{JWT\_SECRET} vacíos \\
+\cod{--dry-run} & Valida sin cambiar nada \\
+\cod{--yes} & No pide confirmaciones \\
+\cod{--replace} & Solo en restore: permite sobrescribir bases existentes \\
+\cod{--nginx-tls} & Instala la configuración de nginx con TLS (con el certificado ya emitido) \\
+\cod{--skip-nginx}, \cod{--skip-systemd} & Omite nginx o los timers \\
+\cod{--skip-firewall}, \cod{--skip-ssh-hardening}, \cod{--skip-docker-daemon} & Omite los ajustes del host \\
+\cod{--ssh-port N} & Puerto SSH que UFW debe permitir (22 por defecto) \\
+\cod{--test-mode} & Solo para la simulación local: omite las comprobaciones de root, sistema y arquitectura, y los ajustes de nginx, systemd, UFW, SSH y Docker. \textbf{No usar en un servidor real} \\
+\bottomrule
+\end{longtable}
+
+El instalador no imprime secretos, no borra volúmenes, no ejecuta el seed sobre una base
+restaurada y no modifica otras instalaciones. Nunca se debe ejecutar \cod{docker compose down -v},
+porque borra los volúmenes con las bases y las imágenes.
+
+% =====================================================================
+\chapter{Operación}\label{cap:operacion}
+
+En este capítulo, la abreviatura \cod{dc} equivale a:
+\begin{bash}
+docker compose -p servicedesk -f deploy/server/compose.yaml --env-file deploy/server/.env
+\end{bash}
+
+\section{Estado del sistema}
+\begin{bash}
+sudo scripts/operations/server-health.sh          # informe completo
+sudo scripts/operations/server-health.sh --brief  # solo avisos y fallos
+scripts/operations/smoke-server.sh                # prueba funcional rápida
+curl -s http://127.0.0.1:8080/health/ready
+dc ps
+dc logs --tail 100 ticket-service
+systemctl list-timers 'servicedesk-*'
+\end{bash}
+
+\cod{server-health.sh} revisa el host, los contenedores, SQL Server, la aplicación, la red, los backups,
+los timers y los logs. Termina con código 0 si no hay fallos y con 1 si hay alguno. No muestra secretos.
+
+\section{Gestión de usuarios}
+\begin{longtable}{@{}P{6.6cm}p{8.0cm}@{}}
+\toprule
+\cabecera \textbf{Comando} (\ruta{scripts/operations/manage-user.sh}) & \textbf{Efecto} \\
+\midrule
+\endhead
+\cod{bootstrap-admin <correo> ["<nombre>"] [--sso-only]} & Crea el primer administrador, solo si no existe ninguno, con una contraseña temporal guardada en \ruta{deploy/server/.initial-admin-secret} (permisos 600). Con \cod{--sso-only} no tiene contraseña local \\
+\cod{create <correo> <rol> "<nombre>" [--password]} & Crea una cuenta que inicia sesión con Microsoft. Con \cod{--password} pide una contraseña local sin mostrarla (o la lee de \cod{NEW\_USER\_PASSWORD}) \\
+\cod{set-role <correo> <rol>} & Cambia el rol y revoca las sesiones \\
+\cod{set-block <correo> BLOQUE\_1|BLOQUE\_2|ninguno} & Asigna o retira el bloque de un técnico (también acepta \cod{NONE}) \\
+\cod{reset-password <correo>} & Genera una contraseña temporal con cambio obligatorio y revoca sus sesiones \\
+\cod{list-staff} & Lista el personal (rol y nombre, sin correos) \\
+\bottomrule
+\end{longtable}
+
+\section{Actualizar la aplicación}
+\begin{enumerate}
+  \item Hacer un backup: \cod{sudo systemctl start servicedesk-backup.service}.
+  \item Verificar y extraer el paquete nuevo sobre \ruta{/opt/servicedesk}, conservando \ruta{deploy/server/.env}.
+  \item Recompilar y arrancar sin seed: \cod{RUN\_SEED=false dc up -d --build}. Las migraciones se aplican al arrancar.
+  \item Ejecutar \cod{smoke-server.sh} y \cod{server-health.sh}.
+  \item Si algo falla, volver al paquete anterior y, si la migración cambió datos, restaurar el backup del paso 1.
+\end{enumerate}
+
+% =====================================================================
+\chapter{Copias de seguridad y recuperación}\label{cap:backups}
+
+\section{Estrategia}
+\begin{itemize}
+  \item \textbf{Local}: \cod{backup-mssql.sh} genera un backup completo de las tres bases con \cod{BACKUP DATABASE}, junto con las imágenes y un \cod{SHA256SUMS}, en \ruta{/var/backups/servicedesk/sets/<ID>}.
+  \item \textbf{Externa}: Restic cifra y envía cada conjunto a Backblaze B2. La clave del repositorio queda bajo la custodia de las personas designadas, y sin ella los backups externos no pueden recuperarse.
+  \item \textbf{Verificación}: revisión periódica del repositorio y simulacro mensual de restauración en contenedores aislados.
+\end{itemize}
+
+\section{Tareas programadas (systemd)}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{5.6cm}P{3.6cm}L@{}}
+\toprule
+\cabecera \textbf{Timer} & \textbf{Frecuencia} & \textbf{Tarea} \\
+\midrule
+\cod{servicedesk-backup} & Diario, 03:15 & Backup local y envío a B2 \\
+\cod{servicedesk-backup-check} & Cada 6 h (00:30, 06:30, 12:30, 18:30) & Comprueba la antigüedad y el estado del último backup \\
+\cod{servicedesk-backup-retention} & Domingo, 04:30 & Aplica la política de retención \\
+\cod{servicedesk-backup-verify} & Domingo, 05:30 & \cod{restic check} del repositorio \\
+\cod{servicedesk-restore-drill} & Día 1 de cada mes, 06:00 & Simulacro de restauración \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Códigos de salida de \cod{backup-mssql.sh}}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{1.4cm}L@{}}
+\toprule
+\cabecera \textbf{Código} & \textbf{Significado} \\
+\midrule
+0 & Backup local y copia externa correctos \\
+1 & Falló el backup local \\
+3 & Backup local correcto, pero no hay copia externa configurada \\
+4 & Backup local correcto, pero falló la copia externa \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\section{Restaurar en el mismo servidor}
+\begin{aviso}[Operación destructiva]
+Sobrescribe las bases actuales. Haz antes un backup de lo que existe.
+\end{aviso}
+\begin{bash}
+systemctl start servicedesk-backup.service                     # 0. Backup previo
+scripts/restore-mssql.sh --from /var/backups/servicedesk/sets/<ID> --dry-run
+dc stop auth-service catalog-service ticket-service api-gateway frontend
+scripts/restore-mssql.sh --from /var/backups/servicedesk/sets/<ID> \
+     --replace --with-uploads                                    # pide escribir RESTAURAR
+RUN_SEED=false dc up -d
+scripts/operations/smoke-server.sh
+\end{bash}
+\cod{restore-mssql.sh} verifica el SHA-256 y \cod{RESTORE VERIFYONLY} y comprueba que la versión del backup sea compatible.
+Después restaura, ejecuta \cod{DBCC CHECKDB}, re-mapea los usuarios de base a los logins del servidor y muestra los conteos.
+
+\section{Recuperar en un servidor nuevo}
+Si el servidor original ya no existe, se recupera el conjunto más reciente desde B2 y después se
+instala en modo restauración:
+\begin{bash}
+scripts/backup/restic-restore.sh --list
+scripts/backup/restic-restore.sh --snapshot latest --target /root/restore/<ID>
+sudo scripts/install-server.sh --mode restore --from /root/restore/<ID> --generate-secrets
+\end{bash}
+\cod{restic-restore.sh} solo restaura archivos en una carpeta nueva o vacía y verifica el contenido
+descifrado, el \cod{SHA256SUMS} del conjunto y cada imagen. La carpeta contiene secretos
+(\ruta{config/server.env}) y queda con permisos 700. Las contraseñas de SQL Server y el
+\cod{JWT\_SECRET} serán nuevos. Los usuarios conservan sus cuentas y roles, pero deben volver a iniciar sesión.
+
+% =====================================================================
+\chapter{Desarrollo y pruebas}\label{cap:pruebas}
+
+\section{Entorno local}
+El laboratorio local levanta SQL Server, los microservicios, el gateway y el frontend con Docker,
+usando \ruta{compose.yaml} en la raíz del repositorio:
+\begin{bash}
+cp .env.example .env.mssql      # MSSQL_SA_PASSWORD, *_DB_PASSWORD y JWT_SECRET
+docker compose --env-file .env.mssql up -d --build
+docker compose --env-file .env.mssql ps      # 6 servicios healthy
+docker compose --env-file .env.mssql down    # nunca "down -v"
+\end{bash}
+Los puertos se publican solo en \cod{127.0.0.1}: 14330 (SQL Server), 18080 (gateway) y 13000 (frontend).
+A diferencia del servidor, el laboratorio usa SQL Server Developer (\cod{2022-latest}),
+\cod{NODE\_ENV=development} en auth-service (permite \cod{dev-login} y el inicio de sesión de Microsoft simulado),
+correo en modo \cod{log}, almacenamiento local y FCM apagado.
+Las cuentas de prueba se cargan desde \ruta{auth-service/prisma/seed.demo.ts}, un archivo local que
+Git no sigue y que se crea a partir de \ruta{seed.demo.example.ts}. Ese archivo nunca se incluye en el paquete del servidor.
+
+\section{Pruebas automatizadas}
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}P{4.6cm}P{2.0cm}L@{}}
+\toprule
+\cabecera \textbf{Conjunto} & \textbf{Pruebas} & \textbf{Ejecución} \\
+\midrule
+auth-service & 76 & \cod{npm test} en la carpeta del servicio (Jest) \\
+catalog-service & 71 & \cod{npm test} (Jest) \\
+ticket-service & 270 & \cod{npm test} (Jest) \\
+api-gateway & 3 & \cod{npm test} (Jest) \\
+frontend & 31 & \cod{npm test} (\cod{node --test}) \\
+\midrule
+\textbf{Total unitarias} & \textbf{451} & \\
+\bottomrule
+\end{tabularx}
+\end{center}
+Recuento comprobado al ejecutar las cinco suites el 9 de noviembre de 2026: 451 de 451 correctas.
+Antes de integrar cambios también debe compilar sin errores \cod{npx tsc --noEmit}.
+
+\section{Pruebas de sistema}
+\begin{longtable}{@{}P{5.6cm}p{9.0cm}@{}}
+\toprule
+\cabecera \textbf{Script} (\ruta{scripts/testing/}) & \textbf{Qué valida} \\
+\midrule
+\endhead
+\cod{new-server-simulation.sh} & Instala el paquete en un servidor simulado y valida la instalación limpia, el smoke, la persistencia, la restauración y la caída de SQL Server \\
+\cod{smoke-e2e.mjs} & Flujo funcional completo por la API: crear, aceptar, escalar, resolver, rechazar y aceptar \\
+\cod{lab-copy-migration-test.sh} & Migración con una copia de los datos del laboratorio y verificación en el navegador \\
+\cod{backup-dr-simulation.sh}, \cod{dr-validate.mjs} & Backup, recuperación ante desastre e integridad de los datos restaurados \\
+\cod{browser-ui-check.mjs} & Pantallas en Chrome: imágenes, aceptación, rechazo e impresión de reportes \\
+\bottomrule
+\end{longtable}
+
+% =====================================================================
+\chapter{Solución de problemas}\label{cap:problemas}
+
+\begin{longtable}{@{}P{5.0cm}p{9.6cm}@{}}
+\toprule
+\cabecera \textbf{Síntoma} & \textbf{Causa y solución} \\
+\midrule
+\endhead
+El instalador rechaza \cod{MSSQL\_PID=Developer} & \cod{SERVER\_PURPOSE=produccion}. Usa \cod{Express} o la edición con licencia, o marca el servidor como \cod{pruebas} \\
+\cod{mssql} nunca llega a \emph{healthy} & Poca RAM (mínimo 2\,GB para SQL Server) o permisos de los volúmenes. Revisa \cod{dc logs mssql} \\
+Un servicio se reinicia en bucle & No conecta con su base. Comprueba que \cod{mssql-init} terminara bien y que las contraseñas del \cod{.env} no cambiaran tras la instalación \\
+Error de CORS en el navegador & \cod{PUBLIC\_DOMAIN} no coincide con el dominio desde el que se accede \\
+El SSO devuelve un error de \emph{redirect URI} & \cod{MICROSOFT\_REDIRECT\_URI} debe coincidir exactamente con la registrada en Entra ID (\cod{https://<dominio>/api/auth/microsoft/callback}) \\
+Cuenta de Microsoft rechazada & El correo no pertenece a \cod{ALLOWED\_DOMAIN} \\
+Respuesta 429 al iniciar sesión & Protección contra fuerza bruta. Espera el tiempo indicado o restablece la contraseña \\
+Respuesta 403 \cod{password\_change\_required} & La cuenta tiene una contraseña temporal. Debe cambiarse desde la aplicación \\
+Respuesta 410 & El cliente usa una ruta retirada. Actualiza el frontend o la aplicación \\
+No se suben fotos del iPhone & Formato HEIC no admitido. Cambia la cámara a «Más compatible» o comparte la foto como JPG \\
+Las imágenes no se ven tras restaurar & El backup no incluía \cod{uploads}. Restaura con \cod{--with-uploads} \\
+Backup con código 3 & Falta configurar B2 en \ruta{/etc/servicedesk/backup.env} \\
+Backup con código 4 & B2 no accesible o credenciales incorrectas. Usa \cod{restic-test-connection.sh} \\
+El certificado caduca pronto & Revisa \cod{certbot renew --dry-run} y el puerto 80 \\
+No llegan correos & \cod{EMAIL\_SEND\_MODE=log} o datos de \cod{SMTP\_*} incorrectos. Revisa \cod{/api/admin/email-outbox} \\
+No llegan notificaciones push & \cod{FCM\_MODE=off}, credenciales de Firebase incorrectas o el dispositivo no está registrado \\
+\bottomrule
+\end{longtable}
+
+La lista completa está en \ruta{docs/troubleshooting/PROBLEMAS_FRECUENTES.md}.
+
+\section{Alcance de las pruebas realizadas}
+Para interpretar correctamente este manual conviene distinguir qué se probó y dónde:
+\begin{itemize}
+  \item \textbf{Probado localmente}: pruebas unitarias, instalación del paquete en un servidor simulado
+        con contenedores, flujo completo por la API, recuperación ante desastre con un repositorio
+        Restic de laboratorio (MinIO) y comprobaciones en Chrome.
+  \item \textbf{Aún no probado}: instalación en Ubuntu 24.04 real con systemd, nginx del host y certbot;
+        SSO de Microsoft, envío SMTP y notificaciones FCM reales; copia externa en Backblaze B2;
+        y el APK en un dispositivo físico.
+\end{itemize}
+Esos pasos deben validarse en el servidor de destino antes de ponerlo en producción.
+
+% =====================================================================
+\appendix
+\chapter{Glosario}
+\begin{description}[style=nextline,leftmargin=1.2cm]
+  \item[API Gateway] Servicio que recibe todas las peticiones de la API y las reenvía al microservicio que corresponde.
+  \item[Bloque] Agrupación de técnicos por zona del campus, usada en los reportes.
+  \item[Constancia] Registro inmutable de la aceptación o el rechazo de una solución.
+  \item[DBCC CHECKDB] Comprobación de integridad de una base de SQL Server.
+  \item[Digest] Huella SHA-256 que identifica de forma exacta una imagen de contenedor.
+  \item[Healthcheck] Comprobación periódica con la que Docker sabe si un contenedor está listo.
+  \item[JWT] \emph{JSON Web Token}, credencial firmada que identifica una sesión.
+  \item[Restic] Herramienta de copias de seguridad cifradas y deduplicadas.
+  \item[Seed] Carga inicial de datos de referencia (catálogo, ubicaciones y conocimiento).
+  \item[Smoke test] Prueba rápida de que las funciones esenciales responden.
+  \item[SSO] \emph{Single Sign-On}, inicio de sesión con la cuenta institucional de Microsoft.
+  \item[Validación digital] Aceptación o rechazo de la solución por parte del creador del ticket.
+\end{description}
+
+\end{document}
