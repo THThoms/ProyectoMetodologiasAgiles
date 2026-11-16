@@ -13,12 +13,12 @@ Leyenda usada en todo el documento:
 
 > **Limpieza de documentación (2026-11-16).** Se retiraron los reportes de fase (`docs/history/phases/`),
 > `docs/history/mssql-migration/`, `docs/history/MOVIMIENTOS_FASE_P.json`,
-> `docs/security/ESTADO_SEGURIDAD_PRE_NUEVO_SERVIDOR.md` (sustituido por `INFORME_FINAL_SEGURIDAD.md`) y
-> `COMMIT_FINAL_SERVICEDESK.md`. Las rutas que este documento cita de ellos siguen disponibles en el
+> `docs/security/ESTADO_SEGURIDAD_PRE_NUEVO_SERVIDOR.md`, `COMMIT_FINAL_SERVICEDESK.md` y, después, las
+> auditorías, los informes `INFORME_FINAL_*.md` y los planes (finalización, cambio a producción UTA). Se guardan fuera del
+> repositorio, en `../ServiceDesk-Auditorias-Informes-Planes/`, y también en el historial de Git (`2e452c2`). Las rutas que este documento cita de ellos siguen disponibles en el
 > historial de Git: `git show 7593bbb:<ruta>`. No se tocó código.
 
-> **Finalización (2026-11-15) — `AUDITORIA_FINAL_SERVICEDESK_UTA.md`, `PLAN_FINALIZACION_SERVICEDESK.md` e
-> informes `INFORME_FINAL_*.md` en la raíz; manuales en `docs/installation/MANUAL_INSTALACION_NUEVO_SERVIDOR.md`
+> **Finalización (2026-11-15) — manuales en `docs/installation/MANUAL_INSTALACION_NUEVO_SERVIDOR.md`
 > y `docs/operations/MANUAL_RECUPERACION.md`.** Añadido sobre la auditoría del 14-nov: caché de revocación 5 s,
 > trabajador automático del outbox con backoff, recordatorios de validación (3 días, sin cierre automático),
 > `includeInactive` solo admin, esquema `tickets.location` NVarChar(255) + índice `resolved_by_id`, dependencias
@@ -26,7 +26,7 @@ Leyenda usada en todo el documento:
 > smoke 48/48, impresión real con CSP sin violaciones, simulación 61/61 + E2E 105/105, DR 60/60. Paquete
 > `release/servicedesk-uta-server-1.0.0-rc6.tar.gz`. Todo sin commitear; sin dispositivo, Ubuntu real, SSO/FCM/SMTP/B2 reales.
 
-> **Auditoría general (2026-11-12 y 2026-11-14) — informe `AUDITORIA_GENERAL_SERVICEDESK_UTA.md` en la raíz.**
+> **Auditoría general (2026-11-12 y 2026-11-14).**
 > Cambios locales sin commitear sobre 7593bbb: rutas asíncronas protegidas (un id no UUID tumbaba el
 > servicio), `/uploads` retirado, verificador tipo PKCE en el SSO de Android, tenant de Microsoft validado,
 > CSP en nginx, token interno de servicio para los avisos push, el gateway como única autoridad CORS,
@@ -268,7 +268,7 @@ abierto ─(técnico acepta)→ en_proceso ─(técnico resuelve)→ pendiente_v
 
 ## 13. Archivos clave
 
-- Informes vigentes: `AUDITORIA_FINAL_SERVICEDESK_UTA.md`, `AUDITORIA_GENERAL_SERVICEDESK_UTA.md`, `PLAN_FINALIZACION_SERVICEDESK.md` e `INFORME_FINAL_*.md` (raíz). Reportes de fase E–Y: retirados el 2026-11-16, en el historial de Git (`7593bbb`).
+- Manuales: `docs/installation/MANUAL_INSTALACION_NUEVO_SERVIDOR.md`, `docs/operations/MANUAL_RECUPERACION.md`. Reportes de fase E–Y (`7593bbb`) y auditorías e informes finales (`2e452c2`): retirados el 2026-11-16, disponibles en el historial de Git.
 - Docs vigentes: `docs/architecture/`, `docs/installation/`, `docs/operations/`, `docs/troubleshooting/`, `docs/manual-tecnico/`, `docs/presentacion/`. Históricos: `docs/history/institucional-uta/`, `docs/history/config/` y `archive/postgresql/docs/`.
 - Backend: `ticket-service/src/routes/{ticketRoutes,assignmentRoutes,adminRoutes,notificationRoutes}.ts`, `ticket-service/src/services/{storageService,historyService,fcmService,routingService}.ts`, `*/src/domain/enums.ts`.
 - Gateway: `api-gateway/src/app.ts`.

@@ -4,7 +4,7 @@ Resumen operativo. Detalle: `RESTAURACION_SERVIDOR_NUEVO.md` (pérdida total), `
 
 ## 1. Qué se respalda y dónde
 
-Cada día (03:15) `scripts/backup-mssql.sh` crea un conjunto en `BACKUP_DIR/sets/<id>` con `auth_db`, `catalog_db`, `ticket_db` (`.bak` con CHECKSUM, verificados con `RESTORE VERIFYONLY`), `manifest.json` (conteos y relaciones), `uploads.sha256`, `config/` (el `.env` recuperable) y `SHA256SUMS`; después lo sube **cifrado** con Restic al repositorio S3 junto con el volumen real de imágenes, y verifica el snapshot. Retención 14 diarios / 8 semanales / 12 mensuales. RPO actual: 24 h (ver `../../INFORME_FINAL_BACKUPS.md` §3 para reducirlo).
+Cada día (03:15) `scripts/backup-mssql.sh` crea un conjunto en `BACKUP_DIR/sets/<id>` con `auth_db`, `catalog_db`, `ticket_db` (`.bak` con CHECKSUM, verificados con `RESTORE VERIFYONLY`), `manifest.json` (conteos y relaciones), `uploads.sha256`, `config/` (el `.env` recuperable) y `SHA256SUMS`; después lo sube **cifrado** con Restic al repositorio S3 junto con el volumen real de imágenes, y verifica el snapshot. Retención 14 diarios / 8 semanales / 12 mensuales. RPO actual: 24 h; para reducirlo, programar backups más frecuentes con los timers de systemd.
 
 Secretos necesarios para recuperar (fuera del servidor, con los custodios): clave Restic, credenciales S3 del bucket. Sin la clave Restic **no hay recuperación posible** desde la copia externa.
 

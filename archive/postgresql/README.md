@@ -19,7 +19,6 @@ artefactos de esa etapa solo como **referencia histórica y de auditoría**.
 | `scripts/init-multi-db.sh` | Creación de las 3 bases en PostgreSQL | `scripts/legacy/init-multi-db.sh` |
 | `scripts/migrate-areas-*.sql` | Migración Sprint 3 (GENERAL→TECHNICIANS, TICS→DTIC) en sintaxis PostgreSQL (`ALTER TYPE`, `BEGIN;`) | `scripts/` |
 | `docs/POSTGRESQL_RETIRADO.md` | Cómo consultar los dumps históricos | `docs/mssql/` |
-| `docs/POSTGRESQL_AUDITORIA_FINAL.md` | Auditoría previa al retiro | `docs/mssql/` |
 
 ## Backups históricos de PostgreSQL
 

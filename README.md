@@ -104,7 +104,7 @@ scripts/build-server-package.sh 1.0.0     # → release/servicedesk-uta-server-1
 ```
 
 Guía paso a paso: **[docs/installation/INSTALACION_SERVIDOR_NUEVO.md](docs/installation/INSTALACION_SERVIDOR_NUEVO.md)**.
-Requisitos: [REQUISITOS_NUEVO_SERVIDOR.md](docs/installation/REQUISITOS_NUEVO_SERVIDOR.md) · Configuración: [CONFIGURACION_PRODUCCION.md](docs/installation/CONFIGURACION_PRODUCCION.md) · Seguridad: [INFORME_FINAL_SEGURIDAD.md](INFORME_FINAL_SEGURIDAD.md) · Estado general: [AUDITORIA_FINAL_SERVICEDESK_UTA.md](AUDITORIA_FINAL_SERVICEDESK_UTA.md)
+Requisitos: [REQUISITOS_NUEVO_SERVIDOR.md](docs/installation/REQUISITOS_NUEVO_SERVIDOR.md) · Configuración: [CONFIGURACION_PRODUCCION.md](docs/installation/CONFIGURACION_PRODUCCION.md) · Seguridad: [SEGURIDAD_SERVIDOR.md](docs/installation/SEGURIDAD_SERVIDOR.md)
 
 ---
 
@@ -123,7 +123,7 @@ docker-compose.prod-mssql.yml  ← compose del VPS ACTUAL (no modificar; se reti
 ```
 
 - Operación: [backups](docs/operations/BACKUPS_MSSQL.md) · [Backblaze B2](docs/operations/CONFIGURACION_BACKBLAZE.md) · [custodia de la clave](docs/operations/CUSTODIA_CLAVE_BACKUPS.md) · [recuperar en servidor nuevo](docs/operations/RESTAURACION_SERVIDOR_NUEVO.md) · [restauración y rollback](docs/operations/RESTAURACION_Y_ROLLBACK.md) · [usuarios y roles](docs/operations/GESTION_USUARIOS.md) · [problemas frecuentes](docs/troubleshooting/PROBLEMAS_FRECUENTES.md)
-- Informes finales: [auditoría](AUDITORIA_FINAL_SERVICEDESK_UTA.md) · [plan](PLAN_FINALIZACION_SERVICEDESK.md) · `INFORME_FINAL_*.md` en la raíz. Los reportes de las fases E–Y se retiraron el 2026-11-16 y siguen en el historial de Git (`git show 7593bbb:docs/history/phases/<archivo>`) · contexto técnico: [docs/CONTEXTO_MAESTRO_SERVICEDESK.md](docs/CONTEXTO_MAESTRO_SERVICEDESK.md)
+- Manuales: [instalación](docs/installation/MANUAL_INSTALACION_NUEVO_SERVIDOR.md) · [recuperación](docs/operations/MANUAL_RECUPERACION.md) · contexto técnico: [docs/CONTEXTO_MAESTRO_SERVICEDESK.md](docs/CONTEXTO_MAESTRO_SERVICEDESK.md)
 
 ## Reglas del proyecto
 

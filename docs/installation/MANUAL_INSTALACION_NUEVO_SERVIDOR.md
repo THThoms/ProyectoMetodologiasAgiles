@@ -82,7 +82,7 @@ scripts/operations/server-health.sh
 sudo reboot   # y repetir smoke: datos e imágenes persisten
 ```
 
-Probar en el navegador: login local y Microsoft, crear ticket con imágenes, aceptar/resolver/validar, reporte impreso. Android: recompilar el APK con `VITE_API_URL=https://<dominio>` (ver `INFORME_FINAL_ANDROID.md` en la raíz del repositorio).
+Probar en el navegador: login local y Microsoft, crear ticket con imágenes, aceptar/resolver/validar, reporte impreso. Android: recompilar el APK con `VITE_API_URL=https://<dominio>` (ver README §Android).
 
 ## 9. Actualizaciones posteriores
 
