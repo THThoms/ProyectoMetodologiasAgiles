@@ -1,0 +1,29 @@
+# =============================================================================
+# Fines de línea del repositorio (Fase Y: corrige el defecto del RC3)
+#
+# El sistema se ejecuta en Linux. Un script con CRLF falla allí ("bad
+# interpreter", "\r: command not found"), y un clon de Windows con
+# core.autocrlf=true los escribía así en la carpeta de trabajo, de donde los
+# toma scripts/build-server-package.sh. El atributo `eol` tiene prioridad
+# sobre core.autocrlf: todo archivo de texto se guarda y se extrae con LF en
+# cualquier sistema operativo.
+# =============================================================================
+* text=auto eol=lf
+
+# Archivos que Windows ejecuta: CRLF.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binarios: nunca se convierten.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.webp binary
+*.gif  binary
+*.ico  binary
+*.jar  binary
+*.pdf  binary
+*.gz   binary
+*.zip  binary
+*.bak  binary
