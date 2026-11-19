@@ -15,8 +15,8 @@ Leyenda usada en todo el documento:
 > `docs/history/mssql-migration/`, `docs/history/MOVIMIENTOS_FASE_P.json`,
 > `docs/security/ESTADO_SEGURIDAD_PRE_NUEVO_SERVIDOR.md`, `COMMIT_FINAL_SERVICEDESK.md` y, después, las
 > auditorías, los informes `INFORME_FINAL_*.md` y los planes (finalización, cambio a producción UTA). Se guardan fuera del
-> repositorio, en `../ServiceDesk-Auditorias-Informes-Planes/`, y también en el historial de Git (`2e452c2`). Las rutas que este documento cita de ellos siguen disponibles en el
-> historial de Git: `git show 7593bbb:<ruta>`. No se tocó código.
+> repositorio, en `../ServiceDesk-Auditorias-Informes-Planes/`, y también en el historial de Git (`c88b8b0`). Las rutas que este documento cita de ellos siguen disponibles en el
+> historial de Git: `git show dc89a07:<ruta>`. No se tocó código.
 
 > **Finalización (2026-11-15) — manuales en `docs/installation/MANUAL_INSTALACION_NUEVO_SERVIDOR.md`
 > y `docs/operations/MANUAL_RECUPERACION.md`.** Añadido sobre la auditoría del 14-nov: caché de revocación 5 s,
@@ -27,7 +27,7 @@ Leyenda usada en todo el documento:
 > `release/servicedesk-uta-server-1.0.0-rc6.tar.gz`. Todo sin commitear; sin dispositivo, Ubuntu real, SSO/FCM/SMTP/B2 reales.
 
 > **Auditoría general (2026-11-12 y 2026-11-14).**
-> Cambios locales sin commitear sobre 7593bbb: rutas asíncronas protegidas (un id no UUID tumbaba el
+> Cambios locales sin commitear sobre dc89a07: rutas asíncronas protegidas (un id no UUID tumbaba el
 > servicio), `/uploads` retirado, verificador tipo PKCE en el SSO de Android, tenant de Microsoft validado,
 > CSP en nginx, token interno de servicio para los avisos push, el gateway como única autoridad CORS,
 > contenedores Node sin root (`setpriv`), resolución y asignación de tickets con escrituras condicionadas,
@@ -268,7 +268,7 @@ abierto ─(técnico acepta)→ en_proceso ─(técnico resuelve)→ pendiente_v
 
 ## 13. Archivos clave
 
-- Manuales: `docs/installation/MANUAL_INSTALACION_NUEVO_SERVIDOR.md`, `docs/operations/MANUAL_RECUPERACION.md`. Reportes de fase E–Y (`7593bbb`) y auditorías e informes finales (`2e452c2`): retirados el 2026-11-16, disponibles en el historial de Git.
+- Manuales: `docs/installation/MANUAL_INSTALACION_NUEVO_SERVIDOR.md`, `docs/operations/MANUAL_RECUPERACION.md`. Reportes de fase E–Y (`dc89a07`) y auditorías e informes finales (`c88b8b0`): retirados el 2026-11-16, disponibles en el historial de Git.
 - Docs vigentes: `docs/architecture/`, `docs/installation/`, `docs/operations/`, `docs/troubleshooting/`, `docs/manual-tecnico/`, `docs/presentacion/`. Históricos: `docs/history/institucional-uta/`, `docs/history/config/` y `archive/postgresql/docs/`.
 - Backend: `ticket-service/src/routes/{ticketRoutes,assignmentRoutes,adminRoutes,notificationRoutes}.ts`, `ticket-service/src/services/{storageService,historyService,fcmService,routingService}.ts`, `*/src/domain/enums.ts`.
 - Gateway: `api-gateway/src/app.ts`.

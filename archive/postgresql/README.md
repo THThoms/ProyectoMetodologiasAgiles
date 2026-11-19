@@ -30,4 +30,4 @@ artefactos de esa etapa solo como **referencia histórica y de auditoría**.
 No borrarlos. Para consultarlos, restaurarlos en un PostgreSQL **temporal y
 aislado** (ver `docs/POSTGRESQL_RETIRADO.md`), nunca en el entorno de la aplicación.
 
-El historial de la migración (fases B–N) está en el historial de Git: `git show 7593bbb:docs/history/phases/<archivo>`.
+El historial de la migración (fases B–N) está en el historial de Git: `git show dc89a07:docs/history/phases/<archivo>`.
